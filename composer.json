@@ -1,0 +1,16 @@
+{
+    "name": "gavin/fakerde",
+    "description": "Generate fake RDE deposits",
+    "type": "project",
+    "require": {
+        "fakerphp/faker": "^1.23",
+        "ext-xmlwriter": "*",
+        "pear/net_dns2": "^1.5"
+    },
+    "authors": [
+        {
+            "name": "Gavin Brown",
+            "email": "gavin.brown@centralnic.com"
+        }
+    ]
+}
