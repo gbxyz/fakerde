@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php declare(strict_types=1);
 
-namespace gavin/fakerde;
+namespace gavin\fakerde;
 
 ini_set('memory_limit', -1);
 
