@@ -11,6 +11,13 @@ if (realpath($argv[0]) == realpath(__FILE__)) {
     exit(generator::main());
 }
 
+/**
+ * generate a realistic-looking XML Registry Data Escrow (RDE) deposit file
+ * for a generic TLD
+ * @see generator::main()
+ * @see RFC8909
+ * @see RFC9022
+ */
 final class generator {
 
     /**
@@ -892,11 +899,28 @@ final class generator {
     /**
      * generate a valid number in e164 format
      */
-    public static function phone(string $locale): string {
+    public static function fakePhone(string $locale): string {
         $phone = self::faker($locale)->e164PhoneNumber();
 
         $cc = self::ccFromLocale($locale);
         return substr($phone, 0, 1+strlen(self::dialCodes[$cc])).'.'.substr($phone, 1+strlen(self::dialCodes[$cc]));
+    }
+
+    /**
+     * there isn't a standard name, different locales use different terms, so this attempts to find the right one.
+     */
+    private static function fakeSP(string $locale): ?string {
+        static $methods = ['state', 'province', 'departmentName', 'county', 'cantonName', 'region', 'prefecture', 'district', 'governorate', 'borough', 'area', 'kommune', 'locality'];
+
+        $class = sprintf('Faker\\Provider\\%s\\Address', $locale);
+
+        foreach ($methods as $method) {
+            if (method_exists($class, $method)) {
+                return self::faker($locale)->$method();
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -959,23 +983,47 @@ final class generator {
 
         $locale = self::randomLocale();
 
-        $xml->startElement('postalInfo');
-        $xml->writeAttribute('type', 'loc');
+        $info = [
+            'loc' => [
+                'name'      => self::faker($locale)->name(),
+                'org'       => (0 == rand(0, 3) ? null : self::faker($locale)->company()),
+                'street'    => self::faker($locale)->streetAddress(),
+                'city'      => self::faker($locale)->city(),
+                'sp'        => self::fakeSP($locale),
+            ],
+            'int' => [
+            ],
+        ];
 
-        $xml->startElement('contact:name');
-        $xml->text(self::faker($locale)->name());
-        $xml->endElement();
+        $pc = self::faker($locale)->postcode();
+        $cc = self::ccFromLocale($locale);
 
-        $xml->startElement('contact:org');
-        $xml->text(self::faker($locale)->company());
-        $xml->endElement();
+        static $t = null;
+        if (is_null($t)) $t = \Transliterator::create('Any-Latin; Latin-ASCII');
 
-        $xml->startElement('contact:addr');
+        foreach ($info['loc'] as $n => $v) {
+            $info['int'][$n] = !is_null($v) ? $t->transliterate($v) : null;
+        }
 
-        $street = preg_split("/\n/", self::faker($locale)->streetAddress(), -1, PREG_SPLIT_NO_EMPTY);
-        if (count($street) > 1) {
-            $sp = array_pop($street);
+        if (empty(array_diff_assoc($info['loc'], $info['int']))) unset($info['loc']);
 
+        foreach (array_keys($info) as $type) {
+            $xml->startElement('postalInfo');
+            $xml->writeAttribute('type', $type);
+
+            $xml->startElement('contact:name');
+            $xml->text($info[$type]['name']);
+            $xml->endElement();
+
+            if (!is_null($info[$type]['org'])) {
+                $xml->startElement('contact:org');
+                $xml->text($info[$type]['org']);
+                $xml->endElement();
+            }
+
+            $xml->startElement('contact:addr');
+
+            $street = preg_split("/\n/", $info[$type]['street'], -1, PREG_SPLIT_NO_EMPTY);
             foreach ($street as $line) {
                 $xml->startElement('contact:street');
                 $xml->text($line);
@@ -983,37 +1031,36 @@ final class generator {
             }
 
             $xml->startElement('contact:city');
-            $xml->text(self::faker($locale)->city());
+            $xml->text($info[$type]['city']);
             $xml->endElement();
 
-            $xml->startElement('contact:sp');
-            $xml->text($sp);
-            $xml->endElement();
-            
-        } else {
-            $xml->startElement('contact:street');
-            $xml->text($street[0]);
+            if (!is_null($info[$type]['sp'])) {
+                $xml->startElement('contact:sp');
+                $xml->text($info[$type]['sp']);
+                $xml->endElement();
+            }
+
+            $xml->startElement('contact:pc');
+            $xml->text($pc);
             $xml->endElement();
 
-            $xml->startElement('contact:city');
-            $xml->text(self::faker($locale)->city());
+            $xml->startElement('contact:cc');
+            $xml->text($cc);
             $xml->endElement();
+
+            $xml->endElement(); // </addr>
+            $xml->endElement(); // </postalInfo>
         }
 
-        $xml->startElement('contact:pc');
-        $xml->text(self::faker($locale)->postcode());
-        $xml->endElement();
-
-        $xml->startElement('contact:cc');
-        $xml->text(self::ccFromLocale($locale));
-        $xml->endElement();
-
-        $xml->endElement(); // </addr>
-        $xml->endElement(); // </postalInfo>
-
         $xml->startElement('voice');
-        $xml->text(self::phone($locale));
+        $xml->text(self::fakePhone($locale));
         $xml->endElement();
+
+        if (0 == rand(0, 9)) {
+            $xml->startElement('fax');
+            $xml->text(self::fakePhone($locale));
+            $xml->endElement();
+        }
 
         $xml->startElement('email');
         $xml->text(self::faker($locale)->email());
