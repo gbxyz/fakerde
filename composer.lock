@@ -76,16 +76,16 @@
         },
         {
             "name": "pear/net_dns2",
-            "version": "v1.5.3",
+            "version": "v1.5.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/mikepultz/netdns2.git",
-                "reference": "dc8053772132a855b8bb6193422a959995f3a773"
+                "reference": "c4a167ff1bc93aaae95601ebc86099376c994581"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/mikepultz/netdns2/zipball/dc8053772132a855b8bb6193422a959995f3a773",
-                "reference": "dc8053772132a855b8bb6193422a959995f3a773",
+                "url": "https://api.github.com/repos/mikepultz/netdns2/zipball/c4a167ff1bc93aaae95601ebc86099376c994581",
+                "reference": "c4a167ff1bc93aaae95601ebc86099376c994581",
                 "shasum": ""
             },
             "require": {
@@ -102,7 +102,7 @@
             },
             "notification-url": "https://packagist.org/downloads/",
             "license": [
-                "BSD-2-Clause"
+                "BSD-3-Clause"
             ],
             "authors": [
                 {
@@ -123,7 +123,7 @@
                 "issues": "https://github.com/mikepultz/netdns2/issues",
                 "source": "https://github.com/mikepultz/netdns2"
             },
-            "time": "2022-11-28T19:16:31+00:00"
+            "time": "2023-10-01T05:15:14+00:00"
         },
         {
             "name": "psr/container",
@@ -180,7 +180,7 @@
         },
         {
             "name": "symfony/deprecation-contracts",
-            "version": "v3.3.0",
+            "version": "v3.4.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/deprecation-contracts.git",
@@ -227,7 +227,7 @@
             "description": "A generic function and convention to trigger deprecation notices",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/deprecation-contracts/tree/v3.3.0"
+                "source": "https://github.com/symfony/deprecation-contracts/tree/v3.4.0"
             },
             "funding": [
                 {
@@ -256,5 +256,5 @@
         "ext-xmlwriter": "*"
     },
     "platform-dev": [],
-    "plugin-api-version": "2.3.0"
+    "plugin-api-version": "2.6.0"
 }
