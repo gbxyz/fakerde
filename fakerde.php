@@ -3,6 +3,11 @@
 
 namespace gbxyz\fakerde;
 
+use DateTimeImmutable;
+use Net_DNS2_RR;
+use Transliterator;
+use XMLWriter;
+
 ini_set('memory_limit', -1);
 
 require_once __DIR__.'/vendor/autoload.php';
@@ -334,16 +339,18 @@ final class generator {
             'registrant',
             'admin',
             'tech',
+            'host-attributes',
         ]);
 
         if (isset($opt['help']) || !isset($opt['origin']) || !isset($opt['input'])) return self::help();
 
         return self::generate(
-            origin:     strToLower(trim($opt['origin'], " \n\r\t\v\x00.")).".",
-            input:      $opt['input'],
-            registrant: array_key_exists('registrant', $opt),
-            admin:      array_key_exists('admin', $opt),
-            tech:       array_key_exists('tech', $opt),
+            origin:             strToLower(trim($opt['origin'], " \n\r\t\v\x00.")).".",
+            input:              $opt['input'],
+            registrant:         array_key_exists('registrant', $opt),
+            admin:              array_key_exists('admin', $opt),
+            tech:               array_key_exists('tech', $opt),
+            host_attributes:    array_key_exists('host-attributes', $opt),
         );
     }
 
@@ -354,12 +361,13 @@ final class generator {
         global $argv;
         $fh = fopen('php://stderr', 'w');
         fprintf($fh, "Usage: php %s OPTIONS\n\nOptions:\n", $argv[0]);
-        fwrite($fh, "  --help           show this help\n");
-        fwrite($fh, "  --origin=ORIGIN  specify zone name\n");
-        fwrite($fh, "  --input=FILE     specify zone file to parse\n");
-        fwrite($fh, "  --registrant     add registrant to domains\n");
-        fwrite($fh, "  --admin          add admin contact to domains\n");
-        fwrite($fh, "  --tech           add tech contact to domains\n");
+        fwrite($fh, "  --help               show this help\n");
+        fwrite($fh, "  --origin=ORIGIN      specify zone name\n");
+        fwrite($fh, "  --input=FILE         specify zone file to parse\n");
+        fwrite($fh, "  --registrant         add registrant to domains\n");
+        fwrite($fh, "  --admin              add admin contact to domains\n");
+        fwrite($fh, "  --tech               add tech contact to domains\n");
+        fwrite($fh, "  --host-attributes    use host attributes instead of objects\n");
         fwrite($fh, "\n");
         fclose($fh);
         return 1;
@@ -402,7 +410,7 @@ final class generator {
                     continue;
 
                 } else {
-                    $rr = \Net_DNS2_RR::fromString($line);
+                    $rr = Net_DNS2_RR::fromString($line);
                     $name = strToLower($rr->name);
                     $type = strToUpper($rr->type);
 
@@ -501,7 +509,7 @@ final class generator {
      */
     private static function getRegistrarStats(): array {
 
-        $date = (new \DateTimeImmutable("4 months ago"))->format('Ym');
+        $date = (new DateTimeImmutable("4 months ago"))->format('Ym');
 
         $url = sprintf(
             'https://www.icann.org/sites/default/files/mrr/%s/%s-transactions-%s-en.csv',
@@ -573,7 +581,7 @@ final class generator {
     /**
      * write the <rdeHeader> element
      */
-    private static function writeHeader(\XMLWriter $xml): void {
+    private static function writeHeader(XMLWriter $xml): void {
         $xml->startElementNS(name:'header', namespace:self::xmlns['header'], prefix:null);
 
         $xml->startElement('tld');
@@ -595,7 +603,7 @@ final class generator {
     /**
      * write all the objects and update the counts
      */
-    private static function generateObjects(bool $registrant, bool $admin, bool $tech): void {
+    private static function generateObjects(bool $registrant, bool $admin, bool $tech, bool $host_attributes): void {
         foreach (array_keys(self::$stats) as $gurid) {
             fwrite(self::$fh, self::generateRegistrarObject(self::$registrars[$gurid]));
         }
@@ -611,13 +619,15 @@ final class generator {
 
         $hosts = [];
         $h = 0;
-        foreach ($delegations as $name => $gurid) {
-            foreach (self::$rrs[$name]['NS'] ?? [] as $ns) {
-                if (!isset($hosts[$ns->nsdname])) {
-                    fwrite(self::$fh, self::generateHostObject($ns->nsdname, intval($gurid)));
-                    $hosts[$ns->nsdname] = 1;
+        if (!$host_attributes) {
+            foreach ($delegations as $name => $gurid) {
+                foreach (self::$rrs[$name]['NS'] ?? [] as $ns) {
+                    if (!isset($hosts[$ns->nsdname])) {
+                        fwrite(self::$fh, self::generateHostObject($ns->nsdname, intval($gurid)));
+                        $hosts[$ns->nsdname] = 1;
 
-                    if (0 == ++$h % 10000) self::info(sprintf('wrote %u hosts', $h));
+                        if (0 == ++$h % 10000) self::info(sprintf('wrote %u hosts', $h));
+                    }
                 }
             }
         }
@@ -640,7 +650,7 @@ final class generator {
                 if (0 == ++$c % 10000) self::info(sprintf('wrote %u of %u contacts', $c, 3*count($delegations)));
             }
 
-            fwrite(self::$fh, self::generateDomainObject($name, $gurid, $contacts));
+            fwrite(self::$fh, self::generateDomainObject($name, $gurid, $contacts, $host_attributes));
 
             if (0 == ++$d % 10000) self::info(sprintf('wrote %u of %u domains', $d, count($delegations)));
         }
@@ -650,7 +660,7 @@ final class generator {
 
         self::$counts = [
             'domain'    => $d,
-            'host'      => count($hosts),
+            'host'      => $h,
             'contact'   => $c,
             'registrar' => count(self::$stats),
         ];
@@ -659,16 +669,17 @@ final class generator {
     /**
      * wrap the object data in the deposit XML header/footer and write to the output file
      */
-    private static function assembleDeposit(string $id, string $watermark): void {
+    private static function assembleDeposit(string $id, string $watermark, bool $contacts, bool $hosts): void {
 
-        $xml = new \XMLWriter;
+        $xml = new XMLWriter;
         $xml->openMemory();
+        $xml->startDocument('1.0', 'UTF-8');
         $xml->setIndent(true);
 
         $xml->startElementNS(name:'deposit', namespace:self::xmlns['rde'], prefix:null);
 
-        $xml->writeAttribute('xmlns:contact', 'urn:ietf:params:xml:ns:contact-1.0');
         $xml->writeAttribute('xmlns:domain', 'urn:ietf:params:xml:ns:domain-1.0');
+        $xml->writeAttribute('xmlns:contact', 'urn:ietf:params:xml:ns:contact-1.0');
 
         $xml->writeAttribute('type', 'FULL');
         $xml->writeAttribute('id', $id);
@@ -683,7 +694,11 @@ final class generator {
         $xml->text('1.0');
         $xml->endElement();
 
-        foreach (['domain', 'host', 'contact', 'registrar'] as $type) {
+        $types = ['domain', 'registrar'];
+        if ($contacts) $types[] = 'contact';
+        if ($hosts) $types[] = 'host';
+
+        foreach ($types as $type) {
             $xml->startElement('objURI');
             $xml->text(self::xmlns[$type]);
             $xml->endElement();
@@ -703,7 +718,7 @@ final class generator {
 
         list($header, $footer) = explode($marker, $xml->flush());
 
-        $output = sprintf('%s_%s_full_S1_R0.xml', self::$tld, (new \DateTimeImmutable())->format('Y-m-d'));
+        $output = sprintf('%s_%s_full_S1_R0.xml', self::$tld, (new DateTimeImmutable())->format('Y-m-d'));
 
         $outfh = fopen($output, 'w');
 
@@ -726,7 +741,7 @@ final class generator {
      */
     private static function writeReport(string $id, string $watermark): void {
 
-        $xml = new \XMLWriter;
+        $xml = new XMLWriter;
         $xml->openMemory();
         $xml->setIndent(true);
 
@@ -753,14 +768,14 @@ final class generator {
 
         $xml->endElement();
 
-        $report = sprintf('%s_%s_full_R0.rep', self::$tld, (new \DateTimeImmutable())->format('Y-m-d'));
+        $report = sprintf('%s_%s_full_R0.rep', self::$tld, (new DateTimeImmutable())->format('Y-m-d'));
         file_put_contents($report, $xml->flush());
 
         self::info(sprintf('wrote %s', $report));
     }
 
-    private static function generate(string $origin, string $input, bool $registrant, bool $admin, bool $tech): int {
-        self::$tld = rtrim($origin, ".");
+    private static function generate(string $origin, string $input, bool $registrant, bool $admin, bool $tech, bool $host_attributes): int {
+        self::$tld = rtrim(strtolower($origin), ".");
         self::info(sprintf('running for .%s', self::$tld));
 
         self::$registrars   = self::getRegistrars();
@@ -770,12 +785,12 @@ final class generator {
         $tmpfile = tempnam(sys_get_temp_dir(), __METHOD__);
         self::$fh = fopen($tmpfile, 'r+');
 
-        self::generateObjects($registrant, $admin, $tech);
+        self::generateObjects($registrant, $admin, $tech, $host_attributes);
 
         $id = strToUpper(base_convert((string)time(), 10, 36));
-        $watermark = (new \DateTimeImmutable)->format('c');
+        $watermark = (new DateTimeImmutable)->format('c');
 
-        self::assembleDeposit($id, $watermark);
+        self::assembleDeposit($id, $watermark, $registrant || $admin || $tech, !$host_attributes);
 
         self::writeReport($id, $watermark);
 
@@ -788,7 +803,7 @@ final class generator {
      * generate a registrar
      */
     private static function generateRegistrarObject(object $rar): string {
-        $xml = new \XMLWriter;
+        $xml = new XMLWriter;
         $xml->openMemory();
         $xml->setIndent(true);
 
@@ -811,14 +826,22 @@ final class generator {
         $xml->endElement();
 
         $xml->endElement();
-        return $xml->flush();
+
+        $blob = $xml->flush();
+
+        if (3882 == $rar->gurid) {
+            var_export($rar);
+            echo $blob;
+        }
+
+        return $blob;
     }
 
     /**
      * generate a host object
      */
     private static function generateHostObject(string $name, int $sponsor): string {
-        $xml = new \XMLWriter;
+        $xml = new XMLWriter;
         $xml->openMemory();
         $xml->setIndent(true);
 
@@ -946,7 +969,7 @@ final class generator {
     /**
      * write the standard metadata that's common to all objects
      */
-    private static function writeStandardMetadata(\XMLwriter $xml, int $sponsor, bool $includeExDate=false): void {
+    private static function writeStandardMetadata(XMLWriter $xml, int $sponsor, bool $includeExDate=false): void {
         $xml->startElement('clID');
         $xml->text(self::$registrars[$sponsor]->id);
         $xml->endElement();
@@ -955,13 +978,13 @@ final class generator {
         $xml->text(self::$registrars[$sponsor]->id);
         $xml->endElement();
 
-        $crDate = new \DateTimeImmutable(sprintf('%u seconds ago', rand(90 * 86400, 3650 * 86400)));
+        $crDate = new DateTimeImmutable(sprintf('%u seconds ago', rand(90 * 86400, 3650 * 86400)));
         $xml->startElement('crDate');
         $xml->text($crDate->format('c'));
         $xml->endElement();
 
         if ($includeExDate) {
-            $exDate = new \DateTimeImmutable(sprintf('@%u', time()+rand(86400, 365 * 86400)));
+            $exDate = new DateTimeImmutable(sprintf('@%u', time()+rand(86400, 365 * 86400)));
             $xml->startElement('exDate');
             $xml->text($exDate->format('c'));
             $xml->endElement();
@@ -971,7 +994,7 @@ final class generator {
         $xml->text(self::$registrars[$sponsor]->id);
         $xml->endElement();
 
-        $upDate = new \DateTimeImmutable(sprintf('%u seconds ago', rand(86400, 90 * 86400)));
+        $upDate = new DateTimeImmutable(sprintf('%u seconds ago', rand(86400, 90 * 86400)));
         $xml->startElement('upDate');
         $xml->text($upDate->format('c'));
         $xml->endElement();
@@ -981,7 +1004,7 @@ final class generator {
      * generate a contact object
      */
     private static function generateContactObject(string $id, int $sponsor): string {
-        $xml = new \XMLWriter;
+        $xml = new XMLWriter;
         $xml->openMemory();
         $xml->setIndent(true);
 
@@ -1025,7 +1048,7 @@ final class generator {
         $cc = self::ccFromLocale($locale);
 
         static $t = null;
-        if (is_null($t)) $t = \Transliterator::create('Any-Latin; Latin-ASCII');
+        if (is_null($t)) $t = Transliterator::create('Any-Latin; Latin-ASCII');
 
         foreach ($info['loc'] as $n => $v) {
             $info['int'][$n] = !is_null($v) ? $t->transliterate($v) : null;
@@ -1101,8 +1124,8 @@ final class generator {
     /**
      * generate a domain object
      */
-    private static function generateDomainObject(string $name, int $sponsor, array $contacts): string {
-        $xml = new \XMLWriter;
+    private static function generateDomainObject(string $name, int $sponsor, array $contacts, $host_attributes): string {
+        $xml = new XMLWriter;
         $xml->openMemory();
         $xml->setIndent(true);
 
@@ -1142,9 +1165,31 @@ final class generator {
         if (isset(self::$rrs[$name]['NS'])) {
             $xml->startElement('ns');
             foreach (self::$rrs[$name]['NS'] as $rr) {
-                $xml->startElement('domain:hostObj');
-                $xml->text($rr->nsdname);
-                $xml->endElement();
+                if ($host_attributes) {
+                    $xml->startElement('domain:hostAttr');
+
+                    $xml->startElement('domain:hostName');
+                    $xml->text($rr->nsdname);
+                    $xml->endElement();
+
+                    if (str_ends_with($rr->nsdname, '.'.self::$tld)) {
+                        foreach (['A', 'AAAA'] as $type) {
+                            foreach (self::$rrs[$rr->nsdname][$type] ?? [] as $addr) {
+                                $xml->startElement('hostAddr');
+                                $xml->writeAttribute('ip', 4 == strlen(inet_pton($addr->address)) ? 'v4' : 'v6');
+                                $xml->text($addr->address);
+                                $xml->endElement();
+                            }
+                        }
+                    }
+
+                    $xml->endElement();
+
+                } else {
+                    $xml->startElement('domain:hostObj');
+                    $xml->text($rr->nsdname);
+                    $xml->endElement();
+                }
             }
             $xml->endElement();
         }
