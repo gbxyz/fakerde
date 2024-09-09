@@ -331,13 +331,19 @@ final class generator {
             'help',
             'origin:',
             'input:',
+            'registrant',
+            'admin',
+            'tech',
         ]);
 
-        if (isset($opt['help']) || 2 != count($opt)) return self::help();
+        if (isset($opt['help']) || !isset($opt['origin']) || !isset($opt['input'])) return self::help();
 
         return self::generate(
-            origin: strToLower(trim($opt['origin'], " \n\r\t\v\x00.")).".",
-            input:  $opt['input'],
+            origin:     strToLower(trim($opt['origin'], " \n\r\t\v\x00.")).".",
+            input:      $opt['input'],
+            registrant: array_key_exists('registrant', $opt),
+            admin:      array_key_exists('admin', $opt),
+            tech:       array_key_exists('tech', $opt),
         );
     }
 
@@ -572,10 +578,12 @@ final class generator {
         $xml->endElement();
 
         foreach (self::$counts as $type => $count) {
-            $xml->startElement('count');
-            $xml->writeAttribute('uri', self::xmlns[$type]);
-            $xml->text((string)$count);
-            $xml->endElement();
+            if ($count > 0) {
+                $xml->startElement('count');
+                $xml->writeAttribute('uri', self::xmlns[$type]);
+                $xml->text((string)$count);
+                $xml->endElement();
+            }
         }
 
         $xml->endElement(); // </header>
@@ -584,7 +592,7 @@ final class generator {
     /**
      * write all the objects and update the counts
      */
-    private static function generateObjects(): void {
+    private static function generateObjects(bool $registrant, bool $admin, bool $tech): void {
         foreach (array_keys(self::$stats) as $gurid) {
             fwrite(self::$fh, self::generateRegistrarObject(self::$registrars[$gurid]));
         }
@@ -613,20 +621,23 @@ final class generator {
 
         self::info(sprintf('wrote %u hosts', $h));
 
+        $types = [];
+        if ($registrant) $types[] = 'registrant';
+        if ($admin) $types[] = 'admin';
+        if ($tech) $types[] = 'tech';
+
         $d = $c = 0;
         foreach ($delegations as $name => $gurid) {
-            $sponsor = intval($gurid);
-
             $contacts = [];
-            foreach (['registrant', 'admin', 'tech'] as $type) {
+            foreach ($types as $type) {
                 $contacts[$type] = substr(strToUpper(base_convert(sha1($name.$type), 16, 36)), 0, 16);
 
-                fwrite(self::$fh, self::generateContactObject($contacts[$type], $sponsor));
+                fwrite(self::$fh, self::generateContactObject($contacts[$type], $gurid));
 
                 if (0 == ++$c % 10000) self::info(sprintf('wrote %u of %u contacts', $c, 3*count($delegations)));
             }
 
-            fwrite(self::$fh, self::generateDomainObject($name, $sponsor, $contacts));
+            fwrite(self::$fh, self::generateDomainObject($name, $gurid, $contacts));
 
             if (0 == ++$d % 10000) self::info(sprintf('wrote %u of %u domains', $d, count($delegations)));
         }
@@ -635,9 +646,9 @@ final class generator {
         self::info(sprintf('wrote %u domains', $d));
 
         self::$counts = [
-            'domain'    => count($delegations),
+            'domain'    => $d,
             'host'      => count($hosts),
-            'contact'   => 3 * count($delegations),
+            'contact'   => $c,
             'registrar' => count(self::$stats),
         ];
     }
@@ -745,7 +756,7 @@ final class generator {
         self::info(sprintf('wrote %s', $report));
     }
 
-    private static function generate(string $origin, string $input): int {
+    private static function generate(string $origin, string $input, bool $registrant, bool $admin, bool $tech): int {
         self::$tld = rtrim($origin, ".");
         self::info(sprintf('running for .%s', self::$tld));
 
@@ -756,7 +767,7 @@ final class generator {
         $tmpfile = tempnam(sys_get_temp_dir(), __METHOD__);
         self::$fh = fopen($tmpfile, 'r+');
 
-        self::generateObjects();
+        self::generateObjects($registrant, $admin, $tech);
 
         $id = strToUpper(base_convert((string)time(), 10, 36));
         $watermark = (new \DateTimeImmutable)->format('c');
@@ -818,10 +829,16 @@ final class generator {
         $xml->text('H'.strToUpper(base_convert(sha1($name), 16, 36)).'-'.strToUpper(self::$tld));
         $xml->endElement();
 
-        foreach (['linked', 'clientDeleteProhibited', 'clientUpdateProhibited'] as $s) {
-            $xml->startElement('status');
-            $xml->writeAttribute('s', $s);
-            $xml->endElement();
+        $xml->startElement('status');
+        $xml->writeAttribute('s', 'linked');
+        $xml->endElement();
+
+        foreach (['clientDeleteProhibited', 'clientUpdateProhibited'] as $s) {
+            if (67 >= rand(0, 99)) {
+                $xml->startElement('status');
+                $xml->writeAttribute('s', $s);
+                $xml->endElement();
+            }
         }
 
         if (str_ends_with($name, '.'.self::$tld)) {
@@ -975,10 +992,16 @@ final class generator {
         $xml->text('C'.strToUpper(base_convert(sha1($id), 16, 36)).'-'.strToUpper(self::$tld));
         $xml->endElement();
 
-        foreach (['linked', 'clientDeleteProhibited', 'clientUpdateProhibited'] as $s) {
-            $xml->startElement('status');
-            $xml->writeAttribute('s', $s);
-            $xml->endElement();
+        $xml->startElement('status');
+        $xml->writeAttribute('s', 'linked');
+        $xml->endElement();
+
+        foreach (['clientDeleteProhibited', 'clientUpdateProhibited', 'clientTransferProhibited'] as $s) {
+            if (67 >= rand(0, 99)) {
+                $xml->startElement('status');
+                $xml->writeAttribute('s', $s);
+                $xml->endElement();
+            }
         }
 
         $locale = self::randomLocale();
@@ -1080,7 +1103,7 @@ final class generator {
         $xml->openMemory();
         $xml->setIndent(true);
 
-        $xml->startElementNS(name:'domain', namespace:self::xmlns['domain'], prefix:null);
+        $xml->startElementNS(prefix:'rdeDomain', name:'domain', namespace:self::xmlns['domain']);
 
         $xml->startElement('name');
         $xml->text($name);
@@ -1090,17 +1113,23 @@ final class generator {
         $xml->text('D'.strToUpper(base_convert(sha1($name), 16, 36)).'-'.strToUpper(self::$tld));
         $xml->endElement();
 
-        foreach (['clientUpdateProhibited','clientDeleteProhibited','clientTransferProhibited'] as $s) {
-            $xml->startElement('status');
-            $xml->writeAttribute('s', $s);
-            $xml->endElement();
+        foreach (['clientUpdateProhibited', 'clientDeleteProhibited', 'clientTransferProhibited'] as $s) {
+            if (67 >= rand(0, 99)) {
+                $xml->startElement('status');
+                $xml->writeAttribute('s', $s);
+                $xml->endElement();
+            }
         }
 
-        $xml->startElement('registrant');
-        $xml->text($contacts['registrant']);
-        $xml->endElement();
+        if (array_key_exists('registrant', $contacts)) {
+            $xml->startElement('registrant');
+            $xml->text($contacts['registrant']);
+            $xml->endElement();
 
-        foreach (['admin', 'tech'] as $type) {
+            unset($contacts['registrant']);
+        }
+
+        foreach (array_keys($contacts) as $type) {
             $xml->startElement('contact');
             $xml->writeAttribute('type', $type);
             $xml->text($contacts[$type]);
