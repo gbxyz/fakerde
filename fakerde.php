@@ -357,6 +357,9 @@ final class generator {
         fwrite($fh, "  --help           show this help\n");
         fwrite($fh, "  --origin=ORIGIN  specify zone name\n");
         fwrite($fh, "  --input=FILE     specify zone file to parse\n");
+        fwrite($fh, "  --registrant     add registrant to domains\n");
+        fwrite($fh, "  --admin          add admin contact to domains\n");
+        fwrite($fh, "  --tech           add tech contact to domains\n");
         fwrite($fh, "\n");
         fclose($fh);
         return 1;
