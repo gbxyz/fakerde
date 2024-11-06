@@ -33,13 +33,15 @@ final class generator {
             'help',
             'origin:',
             'count:',
+            'secure:',
         ]);
 
-        if (isset($opt['help']) || 2 != count($opt)) return self::help();
+        if (isset($opt['help']) || 2 > count($opt)) return self::help();
 
         return self::generate(
             origin: strToLower(trim($opt['origin'], " \n\r\t\v\x00.")),
             count:  intval($opt['count']),
+            secure: floatval($opt['secure'] ?? 0),
         );
     }
 
@@ -54,6 +56,7 @@ final class generator {
         fwrite($fh, "  --origin=ORIGIN  specify zone name, use '.' to generate\n");
         fwrite($fh, "                   a fake root zone\n");
         fwrite($fh, "  --count=COUNT    specify zone size (in delegations)\n");
+        fwrite($fh, "  --secure=RATIO   what fraction of delegations is secure\n");
         fwrite($fh, "\n");
         fclose($fh);
         return 1;
@@ -74,9 +77,9 @@ final class generator {
         exit(1);
     }
 
-    private static function generate(string $origin, int $count): int {
+    private static function generate(string $origin, int $count, float $secure): int {
         return self::generateApex($origin)
-                + self::generateDelegations($origin, $count);
+                + self::generateDelegations($origin, $count, $secure);
     }
 
     private static function generateApex(string $origin): int {
@@ -86,7 +89,7 @@ final class generator {
             $origin,
             $origin,
             $origin,
-            time(),            
+            time(),
         );
 
         for ($i = 1 ; $i <= self::faker()->numberBetween(3, 6) ; $i++) {
@@ -115,7 +118,7 @@ final class generator {
         return 0;
     }
 
-    private static function generateDelegations(string $origin, int $count): int {
+    private static function generateDelegations(string $origin, int $count, float $secure): int {
         static $seen = [];
 
         for ($i = 0 ; $i < $count ; $i++) {
@@ -136,6 +139,17 @@ final class generator {
                     for ($k = 0 ; $k < self::faker()->numberBetween(1, 2) ; $k++) printf("%s 3600 IN A %s\n", $ns, self::faker()->ipv4());
                     for ($k = 0 ; $k < self::faker()->numberBetween(1, 2) ; $k++) printf("%s 3600 IN AAAA %s\n", $ns, self::faker()->ipv6());
                 }
+            }
+
+            if (self::faker()->numberBetween(0, PHP_INT_MAX) / PHP_INT_MAX <= $secure) {
+                $ds = '';
+                while (strlen($ds) < 16) $ds .= dechex(self::faker()->numberBetween(0, 16));
+
+                printf(
+                    "%s 3600 IN DS 1234 8 2 %s\n",
+                    $name,
+                    hash('sha256', $ds)
+                );
             }
         }
 
