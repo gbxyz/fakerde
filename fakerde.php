@@ -384,8 +384,7 @@ final class generator {
      * tell the user about a fatal error
      */
     private static function die(string $error) {
-        fprintf(STDERR, "ERROR: %s\n", $error);
-        exit(1);
+        throw new \Exception($error);
     }
 
     /**
