@@ -494,7 +494,7 @@ final class generator {
                 return $result;
 
             } else {
-                self::die("Got {$status} response when retrieving registrar information");
+                self::die("Got {$status} response when retrieving '{$url}'");
 
             }
         }
