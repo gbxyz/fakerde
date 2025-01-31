@@ -510,44 +510,58 @@ final class generator {
     /**
      * get the most recent public transactions report for this TLD from ICANN
      */
-    private static function getRegistrarStats(): array {
+    private static function getRegistrarStats(?string $tld=null): array {
 
-        $date = (new DateTimeImmutable("4 months ago"))->format('Ym');
+        $tld ??= self::$tld;
+
+        $date = (new DateTimeImmutable("6 months ago"))->format('Ym');
 
         $url = sprintf(
             'https://www.icann.org/sites/default/files/mrr/%s/%s-transactions-%s-en.csv',
-            self::$tld, self::$tld, $date
+            $tld, $tld, $date
         );
-
-        $fh = fopen('php://temp', 'r+');
-        fwrite($fh, self::mirror($url));
-        rewind($fh);
-
-        // discard header
-        fgetcsv($fh);
 
         $stats = [];
 
-        while (true) {
-            if (feof($fh)) {
-                break;
+        try {
+            $fh = fopen('php://temp', 'r+');
+            fwrite($fh, self::mirror($url));
+            rewind($fh);
 
-            } else {
-                $row = fgetcsv($fh);
+            // discard header
+            fgetcsv($fh);
 
-                if (!is_array($row) || empty($row)) {
-                    continue;
+            while (true) {
+                if (feof($fh)) {
+                    break;
 
-                } elseif (!empty($row[1])) {
-                    $gurid = strval($row[1]);
-                    if (isset(self::$registrars[$gurid]) && $row[2] > 0) $stats[$gurid] = intval($row[2]);
+                } else {
+                    $row = fgetcsv($fh);
 
+                    if (!is_array($row) || empty($row)) {
+                        continue;
 
+                    } elseif (!empty($row[1])) {
+                        $gurid = strval($row[1]);
+                        if (isset(self::$registrars[$gurid]) && $row[2] > 0) $stats[$gurid] = intval($row[2]);
+
+                    }
                 }
             }
-        }
 
-        arsort($stats, SORT_NUMERIC);
+            arsort($stats, SORT_NUMERIC);
+
+        } catch (\Exception $e) {
+            self::info($e->getMessage());
+            if ("org" !== $tld) {
+                return self::getRegistrarStats("org");
+
+            } else {
+                exit(1);
+
+            }
+
+        }
 
         return $stats;
     }
