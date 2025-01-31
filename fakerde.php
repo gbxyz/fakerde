@@ -475,9 +475,12 @@ final class generator {
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/115.0');
 
+            $headers = [];
             if (file_exists($local)) {
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ["If-Modified-Since: ".gmdate('D, d M Y H:i:s \G\M\T', filemtime($local))]);
+                $headers[] = "If-Modified-Since: ".gmdate('D, d M Y H:i:s \G\M\T', filemtime($local));
             }
+
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 
             $result = curl_exec($ch);
             $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
