@@ -846,11 +846,6 @@ final class generator {
 
         $blob = $xml->flush();
 
-        if (3882 == $rar->gurid) {
-            var_export($rar);
-            echo $blob;
-        }
-
         return $blob;
     }
 
