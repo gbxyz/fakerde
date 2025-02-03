@@ -340,18 +340,26 @@ final class generator {
             'admin',
             'tech',
             'host-attributes',
+            'encrypt:',
+            'sign:',
+            'resend:',
         ]);
 
         if (isset($opt['help']) || !isset($opt['origin']) || !isset($opt['input'])) return self::help();
 
-        return self::generate(
+        self::generate(
             origin:             strToLower(trim($opt['origin'], " \n\r\t\v\x00.")).".",
             input:              $opt['input'],
             registrant:         array_key_exists('registrant', $opt),
             admin:              array_key_exists('admin', $opt),
             tech:               array_key_exists('tech', $opt),
             host_attributes:    array_key_exists('host-attributes', $opt),
+            encryption_key:     $opt['encrypt'] ?? null,
+            signing_key:        $opt['sign'] ?? null,
+            resend:             array_key_exists('resend', $opt) ? (int)$opt['resend'] : 0,
         );
+
+        return 0;
     }
 
     /**
@@ -363,11 +371,14 @@ final class generator {
         fprintf($fh, "Usage: php %s OPTIONS\n\nOptions:\n", $argv[0]);
         fwrite($fh, "  --help               show this help\n");
         fwrite($fh, "  --origin=ORIGIN      specify zone name\n");
+        fwrite($fh, "  --resend=RESEND      specify resend (default 0)\n");
         fwrite($fh, "  --input=FILE         specify zone file to parse\n");
         fwrite($fh, "  --registrant         add registrant to domains\n");
         fwrite($fh, "  --admin              add admin contact to domains\n");
         fwrite($fh, "  --tech               add tech contact to domains\n");
         fwrite($fh, "  --host-attributes    use host attributes instead of objects\n");
+        fwrite($fh, "  --encrypt=KEY        generate an encrypted .ryde file as well as the XML\n");
+        fwrite($fh, "  --sign=KEY           generate a .sig file as well as the encrypted .ryde file\n");
         fwrite($fh, "\n");
         fclose($fh);
         return 1;
@@ -396,7 +407,7 @@ final class generator {
 
         $rrs = [];
 
-        if (false === $fh) self::die("Unable to open {$input}");
+        if (false === $fh) self::die("Unable to open {$zone}");
 
         while (true) {
             if (feof($fh)) {
@@ -529,14 +540,26 @@ final class generator {
             rewind($fh);
 
             // discard header
-            fgetcsv($fh);
+            fgetcsv(
+                stream: $fh,
+                length: null,
+                separator: ",",
+                enclosure: '"',
+                escape: "",
+            );
 
             while (true) {
                 if (feof($fh)) {
                     break;
 
                 } else {
-                    $row = fgetcsv($fh);
+                    $row = fgetcsv(
+                        stream: $fh,
+                        length: null,
+                        separator: ",",
+                        enclosure: '"',
+                        escape: "",
+                    );
 
                     if (!is_array($row) || empty($row)) {
                         continue;
@@ -620,7 +643,7 @@ final class generator {
     /**
      * write all the objects and update the counts
      */
-    private static function generateObjects(bool $registrant, bool $admin, bool $tech, bool $host_attributes): void {
+    private static function generateObjects(bool $registrant, bool $admin, bool $tech, bool $host_attributes, ): void {
         foreach (array_keys(self::$stats) as $gurid) {
             fwrite(self::$fh, self::generateRegistrarObject(self::$registrars[$gurid]));
         }
@@ -686,7 +709,7 @@ final class generator {
     /**
      * wrap the object data in the deposit XML header/footer and write to the output file
      */
-    private static function assembleDeposit(string $id, string $watermark, bool $contacts, bool $hosts): void {
+    private static function assembleDeposit(string $id, string $watermark, int $resend, bool $contacts, bool $hosts): string {
 
         $xml = new XMLWriter;
         $xml->openMemory();
@@ -735,7 +758,7 @@ final class generator {
 
         list($header, $footer) = explode($marker, $xml->flush());
 
-        $output = sprintf('%s_%s_full_S1_R0.xml', self::$tld, (new DateTimeImmutable())->format('Y-m-d'));
+        $output = sprintf('%s_%s_full_S1_R%u.xml', self::$tld, (new DateTimeImmutable())->format('Y-m-d'), $resend);
 
         $outfh = fopen($output, 'w');
 
@@ -751,12 +774,14 @@ final class generator {
         fclose($outfh);
 
         self::info(sprintf('wrote %s', $output));
+
+        return $output;
     }
 
     /**
      * write the report file
      */
-    private static function writeReport(string $id, string $watermark): void {
+    private static function writeReport(string $id, string $watermark, int $resend=0): void {
 
         $xml = new XMLWriter;
         $xml->openMemory();
@@ -766,10 +791,10 @@ final class generator {
 
         $values = [
             'id'                => $id,
-            'version'           => '1',
+            'version'           => 1,
             'rydeSpecEscrow'    => 'RFC8909',
             'rydeSpecMapping'   => 'RFC9022',
-            'resend'            => '0',
+            'resend'            => $resend,
             'crDate'            => $watermark,
             'kind'              => 'FULL',
             'watermark'         => $watermark,
@@ -777,7 +802,7 @@ final class generator {
 
         foreach ($values as $name => $value) {
             $xml->startElement($name);
-            $xml->text($value);
+            $xml->text(strval($value));
             $xml->endElement();
         }
 
@@ -785,15 +810,112 @@ final class generator {
 
         $xml->endElement();
 
-        $report = sprintf('%s_%s_full_R0.rep', self::$tld, (new DateTimeImmutable())->format('Y-m-d'));
+        $report = sprintf('%s_%s_full_R%u.rep', self::$tld, (new DateTimeImmutable())->format('Y-m-d'), $resend);
         file_put_contents($report, $xml->flush());
 
         self::info(sprintf('wrote %s', $report));
     }
 
-    private static function generate(string $origin, string $input, bool $registrant, bool $admin, bool $tech, bool $host_attributes): int {
+    private static function generateArchive(string $file): string {
+        $new = basename($file, '.xml').'.tar';
+
+        $proc = proc_open(
+            [
+                'tar',
+                '--create',
+                '--file',
+                $new,
+                $file,
+            ],
+            [],
+            $pipes,
+        );
+
+        if (proc_close($proc) > 0) self::die("archiving failed");
+
+        self::info(sprintf('wrote %s', $new));
+
+        return $new;
+    }
+
+    private static function encryptDeposit(string $file, string $encryption_key): string {
+        $new = basename($file, '.tar').'.ryde';
+
+        $env = [];
+
+        $GNUPGHOME = getenv('GNUPGHOME');
+        if (is_string($GNUPGHOME) && strlen($GNUPGHOME) > 0) {
+            $env['GNUPGHOME'] = $GNUPGHOME;
+        }
+
+        $proc = proc_open(
+            [
+                'gpg',
+                '--yes',
+                '--encrypt',
+                '--trust-model', 'always',
+                '--recipient', $encryption_key,
+                '--output', $new,
+                $file
+            ],
+            [],
+            $pipes,
+            null,
+            $env,
+        );
+
+        if (proc_close($proc) > 0) self::die("encryption failed");
+
+        self::info(sprintf('wrote %s', $new));
+
+        return $new;
+    }
+
+    private static function signDeposit(string $file, string $signing_key): string {
+        $sig = basename($file, '.ryde').'.sig';
+
+        $env = [];
+
+        $GNUPGHOME = getenv('GNUPGHOME');
+        if (is_string($GNUPGHOME) && strlen($GNUPGHOME) > 0) {
+            $env['GNUPGHOME'] = $GNUPGHOME;
+        }
+
+        $proc = proc_open(
+            [
+                'gpg',
+                '--yes',
+                '--clearsign',
+                '--local-user', $signing_key,
+                '--output', $sig,
+                $file
+            ],
+            [],
+            $pipes,
+            null,
+            $env,
+        );
+
+        if (proc_close($proc) > 0) self::die("signing failed");
+
+        self::info(sprintf('wrote %s', $sig));
+
+        return $sig;
+    }
+
+    private static function generate(
+        string $origin,
+        string $input,
+        bool $registrant,
+        bool $admin,
+        bool $tech,
+        bool $host_attributes,
+        ?string $encryption_key=null,
+        ?string $signing_key=null,
+        int $resend=0,
+    ): void {
         self::$tld = rtrim(strtolower($origin), ".");
-        self::info(sprintf('running for .%s', self::$tld));
+        self::info(sprintf('running for .%s, resend %u', self::$tld, $resend));
 
         self::$registrars   = self::getRegistrars();
         self::$stats        = self::getRegistrarStats(self::$tld);
@@ -807,13 +929,17 @@ final class generator {
         $id = strToUpper(base_convert((string)time(), 10, 36));
         $watermark = (new DateTimeImmutable)->format('c');
 
-        self::assembleDeposit($id, $watermark, $registrant || $admin || $tech, !$host_attributes);
+        $file = self::assembleDeposit($id, $watermark, $resend, $registrant || $admin || $tech, !$host_attributes);
 
-        self::writeReport($id, $watermark);
+        self::writeReport($id, $watermark, $resend);
+
+        if (!is_null($encryption_key)) {
+            $file = self::generateArchive($file);
+            $file = self::encryptDeposit($file, $encryption_key);
+            if (!is_null($signing_key)) self::signDeposit($file, $signing_key);
+        }
 
         unlink($tmpfile);
-
-        return 0;
     }
 
     /**
