@@ -11,6 +11,10 @@ These may be used for various purposes.
 
 Run `composer install` to install the required dependencies. Then run `php fake{rde|zone}.php --help` to see usage instructions for each tool.
 
+## Limitations
+
+PHP Faker uses lists of examples to generate things like domain names, addresses, and so on. So both fakerde.php and fakezone.php will struggle to generate files containing large numbers of domains.
+
 ## Copyright & License
 
 Copyright 2023-2024 Gavin Brown. See [LICENSE](LICENSE) for licensing information.
