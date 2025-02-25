@@ -670,16 +670,17 @@ final class generator {
             fwrite(STDERR, "Warning: CSV is not fully supported yet, don't expect this program to generate a valid CSV file!\n");
         }
 
-        foreach (array_keys(self::$stats) as $gurid) {
-            fwrite(self::$fh, self::generateRegistrarObject(self::$registrars[$gurid]));
-        }
-
-        self::info(sprintf('wrote %u registrars', count(self::$stats)));
-
         $delegations = [];
         foreach (self::getDelegations(self::$tld) as $name) {
             $delegations[$name] = self::selectRegistrar();
         }
+
+        $rars = array_unique(array_values($delegations));
+        foreach ($rars as $gurid) {
+            fwrite(self::$fh, self::generateRegistrarObject(self::$registrars[$gurid]));
+        }
+
+        self::info(sprintf('wrote %u registrars', count($rars)));
 
         self::info(sprintf('%u domains will be written', count($delegations)));
 
@@ -728,7 +729,8 @@ final class generator {
             'domain'    => $d,
             'host'      => $h,
             'contact'   => $c,
-            'registrar' => count(self::$stats),
+            'registrar' => count($rars),
+            'eppParams' => 1,
         ];
     }
 
