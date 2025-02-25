@@ -1307,12 +1307,21 @@ final class generator {
         $xml->text('D'.strToUpper(base_convert(sha1($name), 16, 36)).'-'.strToUpper(self::$tld));
         $xml->endElement();
 
+        $scount = 0;
         foreach (['clientUpdateProhibited', 'clientDeleteProhibited', 'clientTransferProhibited'] as $s) {
             if (67 >= rand(0, 99)) {
                 $xml->startElement('status');
                 $xml->writeAttribute('s', $s);
                 $xml->endElement();
+
+                $scount++;
             }
+        }
+
+        if ($scount < 1) {
+            $xml->startElement('status');
+            $xml->writeAttribute('s', 'ok');
+            $xml->endElement();
         }
 
         if (array_key_exists('registrant', $contacts)) {
