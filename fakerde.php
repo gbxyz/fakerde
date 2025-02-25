@@ -746,8 +746,12 @@ final class generator {
 
         $xml->startElementNS(name:'deposit', namespace:self::xmlns['rde'], prefix:null);
 
+        $xml->writeAttribute('xmlns:epp', 'urn:ietf:params:xml:ns:epp-1.0');
         $xml->writeAttribute('xmlns:domain', 'urn:ietf:params:xml:ns:domain-1.0');
-        $xml->writeAttribute('xmlns:contact', 'urn:ietf:params:xml:ns:contact-1.0');
+
+        if ($contacts) {
+            $xml->writeAttribute('xmlns:contact', 'urn:ietf:params:xml:ns:contact-1.0');
+        }
 
         $xml->writeAttribute('type', 'FULL');
         $xml->writeAttribute('id', $id);
