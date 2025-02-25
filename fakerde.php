@@ -75,6 +75,16 @@ final class generator {
         'csvHost'       => 'urn:ietf:params:xml:ns:csvHost-1.0',
         'csvContact'    => 'urn:ietf:params:xml:ns:csvContact-1.0',
         'csvRegistrar'  => 'urn:ietf:params:xml:ns:csvRegistrar-1.0',
+        'eppParams'     => 'urn:ietf:params:xml:ns:rdeEppParams-1.0',
+    ];
+
+    /**
+     * list of EPP extension URIs to include in the EPP Parameters object.
+     */
+    private const extURI = [
+        'urn:ietf:params:xml:ns:rgp-1.0',
+        'urn:ietf:params:xml:ns:secDNS-1.1',
+        'urn:ietf:params:xml:ns:launch-1.0',
     ];
 
     /**
@@ -725,6 +735,11 @@ final class generator {
         self::info(sprintf('wrote %u contacts', $c));
         self::info(sprintf('wrote %u domains', $d));
 
+        fwrite(self::$fh, self::generateEPPParamsObject(
+            $registrant || $admin || $tech,
+            !$host_attributes
+        ));
+
         self::$counts = [
             'domain'    => $d,
             'host'      => $h,
@@ -732,6 +747,49 @@ final class generator {
             'registrar' => count($rars),
             'eppParams' => 1,
         ];
+    }
+
+    private static function generateEPPParamsObject(bool $contacts, bool $hosts) {
+        $xml = new XMLWriter;
+        $xml->openMemory();
+        $xml->setIndent(true);
+
+        $xml->startElementNS(prefix:null, name:'eppParams', namespace:self::xmlns['eppParams']);
+
+        $xml->startElement('version');
+        $xml->text('1.0');
+        $xml->endElement();
+
+        $xml->startElement('lang');
+        $xml->text('en');
+        $xml->endElement();
+
+        $objURIs = [self::xmlns['domain']];
+        if ($contacts) $objURIs[] = self::xmlns['contact'];
+        if ($hosts) $objURIs[] = self::xmlns['host'];
+
+        foreach ($objURIs as $uri) {
+            $xml->startElement('objURI');
+            $xml->text($uri);
+            $xml->endElement();
+        }
+
+        $xml->startElement('svcExtension');
+
+        foreach (self::extURI as $uri) {
+            $xml->startElementNS(prefix:'epp', name:'extURI', namespace:null);
+            $xml->text($uri);
+            $xml->endElement();
+        }
+
+        $xml->endElement(); // svcExtension
+
+        $xml->startElement('dcp');
+        $xml->writeRaw("<epp:access><epp:all/></epp:access><epp:statement><epp:purpose><epp:admin/><epp:prov/></epp:purpose><epp:recipient><epp:ours/><epp:public/></epp:recipient><epp:retention><epp:stated/></epp:retention></epp:statement>");
+        $xml->endElement();
+
+        $xml->endElement();
+        return $xml->flush();
     }
 
     /**
