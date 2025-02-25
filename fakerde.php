@@ -885,7 +885,7 @@ final class generator {
             [
                 'gpg',
                 '--yes',
-                '--clearsign',
+                '--detach-sig',
                 '--local-user', $signing_key,
                 '--output', $sig,
                 $file
