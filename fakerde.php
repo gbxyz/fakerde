@@ -1297,7 +1297,7 @@ final class generator {
         $xml->openMemory();
         $xml->setIndent(true);
 
-        $xml->startElementNS(prefix:'rdeDomain', name:'domain', namespace:self::xmlns['domain']);
+        $xml->startElementNS(prefix:null, name:'domain', namespace:self::xmlns['domain']);
 
         $xml->startElement('name');
         $xml->text($name);
