@@ -42,6 +42,9 @@ Options:
   --host-attributes    use host attributes instead of objects
   --encrypt=KEY        generate an encrypted .ryde file as well as the XML
   --sign=KEY           generate a .sig file as well as the encrypted .ryde file
+  --xml                generate an XML deposit (the default)
+  --csv                generate a CSV deposit (cannot be combined with --xml, not fully implemented)
+  --no-report          do not generate a .rep file
 ```
 
 ## Limitations

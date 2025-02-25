@@ -398,7 +398,7 @@ final class generator {
         fwrite($fh, "  --encrypt=KEY        generate an encrypted .ryde file as well as the XML\n");
         fwrite($fh, "  --sign=KEY           generate a .sig file as well as the encrypted .ryde file\n");
         fwrite($fh, "  --xml                generate an XML deposit (the default)\n");
-        fwrite($fh, "  --csv                generate a CSV deposit (cannot be combined with --xml, not currently implemented)\n");
+        fwrite($fh, "  --csv                generate a CSV deposit (cannot be combined with --xml, not fully implemented)\n");
         fwrite($fh, "  --no-report          do not generate a .rep file\n");
         fwrite($fh, "\n");
         fclose($fh);
