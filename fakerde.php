@@ -61,21 +61,20 @@ final class generator {
     private static $fh;
 
     /**
-     * data model (model::xml or model::csv)
-     */
-    private static model $model;
-
-    /**
      * map of short name => XML namespace
      */
     private const xmlns = [
-        'rde'       => 'urn:ietf:params:xml:ns:rde-1.0',
-        'header'    => 'urn:ietf:params:xml:ns:rdeHeader-1.0',
-        'report'    => 'urn:ietf:params:xml:ns:rdeReport-1.0',
-        'domain'    => 'urn:ietf:params:xml:ns:rdeDomain-1.0',
-        'host'      => 'urn:ietf:params:xml:ns:rdeHost-1.0',
-        'contact'   => 'urn:ietf:params:xml:ns:rdeContact-1.0',
-        'registrar' => 'urn:ietf:params:xml:ns:rdeRegistrar-1.0',
+        'rde'           => 'urn:ietf:params:xml:ns:rde-1.0',
+        'header'        => 'urn:ietf:params:xml:ns:rdeHeader-1.0',
+        'report'        => 'urn:ietf:params:xml:ns:rdeReport-1.0',
+        'domain'        => 'urn:ietf:params:xml:ns:rdeDomain-1.0',
+        'host'          => 'urn:ietf:params:xml:ns:rdeHost-1.0',
+        'contact'       => 'urn:ietf:params:xml:ns:rdeContact-1.0',
+        'registrar'     => 'urn:ietf:params:xml:ns:rdeRegistrar-1.0',
+        'csvDomain'     => 'urn:ietf:params:xml:ns:csvDomain-1.0',
+        'csvHost'       => 'urn:ietf:params:xml:ns:csvHost-1.0',
+        'csvContact'    => 'urn:ietf:params:xml:ns:csvContact-1.0',
+        'csvRegistrar'  => 'urn:ietf:params:xml:ns:csvRegistrar-1.0',
     ];
 
     /**
@@ -355,6 +354,7 @@ final class generator {
             'resend:',
             'xml',
             'csv',
+            'no-report',
         ]);
 
         if (isset($opt['help']) || !isset($opt['origin']) || !isset($opt['input'])) return self::help();
@@ -374,6 +374,7 @@ final class generator {
             signing_key:        $opt['sign'] ?? null,
             resend:             array_key_exists('resend', $opt) ? (int)$opt['resend'] : 0,
             model:              array_key_exists('csv', $opt) ? model::csv : model::xml,
+            no_report:          array_key_exists('no-report', $opt),
         );
 
         return 0;
@@ -398,6 +399,7 @@ final class generator {
         fwrite($fh, "  --sign=KEY           generate a .sig file as well as the encrypted .ryde file\n");
         fwrite($fh, "  --xml                generate an XML deposit (the default)\n");
         fwrite($fh, "  --csv                generate a CSV deposit (cannot be combined with --xml, not currently implemented)\n");
+        fwrite($fh, "  --no-report          do not generate a .rep file\n");
         fwrite($fh, "\n");
         fclose($fh);
         return 1;
@@ -662,7 +664,12 @@ final class generator {
     /**
      * write all the objects and update the counts
      */
-    private static function generateObjects(bool $registrant, bool $admin, bool $tech, bool $host_attributes, ): void {
+    private static function generateObjects(model $model, bool $registrant, bool $admin, bool $tech, bool $host_attributes, ): void {
+
+        if ($model != model::xml) {
+            fwrite(STDERR, "Warning: CSV is not fully supported yet, don't expect this program to generate a valid CSV file!\n");
+        }
+
         foreach (array_keys(self::$stats) as $gurid) {
             fwrite(self::$fh, self::generateRegistrarObject(self::$registrars[$gurid]));
         }
@@ -933,12 +940,8 @@ final class generator {
         ?string $signing_key=null,
         int $resend=0,
         model $model=model::xml,
+        bool $no_report=false,
     ): void {
-
-        if ($model != model::xml) {
-            self::die("CSV is not supported yet");
-        }
-
         self::$tld = rtrim(strtolower($origin), ".");
         self::info(sprintf('running for .%s, resend %u', self::$tld, $resend));
 
@@ -949,14 +952,16 @@ final class generator {
         $tmpfile = tempnam(sys_get_temp_dir(), __METHOD__);
         self::$fh = fopen($tmpfile, 'r+');
 
-        self::generateObjects($registrant, $admin, $tech, $host_attributes);
+        self::generateObjects($model, $registrant, $admin, $tech, $host_attributes);
 
         $id = strToUpper(base_convert((string)time(), 10, 36));
         $watermark = (new DateTimeImmutable)->format('c');
 
         $file = self::assembleDeposit($id, $watermark, $resend, $registrant || $admin || $tech, !$host_attributes);
 
-        self::writeReport($id, $watermark, $resend);
+        if (false === $no_report) {
+            self::writeReport($id, $watermark, $resend);
+        }
 
         if (!is_null($encryption_key)) {
             $file = self::generateArchive($file);
