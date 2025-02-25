@@ -12,6 +12,11 @@ ini_set('memory_limit', -1);
 
 require_once __DIR__.'/vendor/autoload.php';
 
+enum model {
+    case xml;
+    case csv;
+}
+
 if (realpath($argv[0]) == realpath(__FILE__)) {
     exit(generator::main());
 }
@@ -54,6 +59,11 @@ final class generator {
      * temporary filehandle where objects are written
      */
     private static $fh;
+
+    /**
+     * data model (model::xml or model::csv)
+     */
+    private static model $model;
 
     /**
      * map of short name => XML namespace
@@ -343,9 +353,15 @@ final class generator {
             'encrypt:',
             'sign:',
             'resend:',
+            'xml',
+            'csv',
         ]);
 
         if (isset($opt['help']) || !isset($opt['origin']) || !isset($opt['input'])) return self::help();
+
+        if (array_key_exists('xml', $opt) && array_key_exists('csv', $opt)) {
+            return self::help();
+        }
 
         self::generate(
             origin:             strToLower(trim($opt['origin'], " \n\r\t\v\x00.")).".",
@@ -357,6 +373,7 @@ final class generator {
             encryption_key:     $opt['encrypt'] ?? null,
             signing_key:        $opt['sign'] ?? null,
             resend:             array_key_exists('resend', $opt) ? (int)$opt['resend'] : 0,
+            model:              array_key_exists('csv', $opt) ? model::csv : model::xml,
         );
 
         return 0;
@@ -379,6 +396,8 @@ final class generator {
         fwrite($fh, "  --host-attributes    use host attributes instead of objects\n");
         fwrite($fh, "  --encrypt=KEY        generate an encrypted .ryde file as well as the XML\n");
         fwrite($fh, "  --sign=KEY           generate a .sig file as well as the encrypted .ryde file\n");
+        fwrite($fh, "  --xml                generate an XML deposit (the default)\n");
+        fwrite($fh, "  --csv                generate a CSV deposit (cannot be combined with --xml, not currently implemented)\n");
         fwrite($fh, "\n");
         fclose($fh);
         return 1;
@@ -913,7 +932,13 @@ final class generator {
         ?string $encryption_key=null,
         ?string $signing_key=null,
         int $resend=0,
+        model $model=model::xml,
     ): void {
+
+        if ($model != model::xml) {
+            self::die("CSV is not supported yet");
+        }
+
         self::$tld = rtrim(strtolower($origin), ".");
         self::info(sprintf('running for .%s, resend %u', self::$tld, $resend));
 
