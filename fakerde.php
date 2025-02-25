@@ -754,7 +754,7 @@ final class generator {
         $xml->openMemory();
         $xml->setIndent(true);
 
-        $xml->startElementNS(prefix:null, name:'eppParams', namespace:self::xmlns['eppParams']);
+        $xml->startElementNS(name:'eppParams', namespace:self::xmlns['eppParams'], prefix:null);
 
         $xml->startElement('version');
         $xml->text('1.0');
@@ -1361,7 +1361,7 @@ final class generator {
         $xml->openMemory();
         $xml->setIndent(true);
 
-        $xml->startElementNS(prefix:null, name:'domain', namespace:self::xmlns['domain']);
+        $xml->startElementNS(name:'domain', namespace:self::xmlns['domain'], prefix:null);
 
         $xml->startElement('name');
         $xml->text($name);
