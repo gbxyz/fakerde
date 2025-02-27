@@ -12,11 +12,6 @@ ini_set('memory_limit', -1);
 
 require_once __DIR__.'/vendor/autoload.php';
 
-enum model {
-    case xml;
-    case csv;
-}
-
 if (realpath($argv[0]) == realpath(__FILE__)) {
     exit(generator::main());
 }
@@ -71,10 +66,6 @@ final class generator {
         'host'          => 'urn:ietf:params:xml:ns:rdeHost-1.0',
         'contact'       => 'urn:ietf:params:xml:ns:rdeContact-1.0',
         'registrar'     => 'urn:ietf:params:xml:ns:rdeRegistrar-1.0',
-        'csvDomain'     => 'urn:ietf:params:xml:ns:csvDomain-1.0',
-        'csvHost'       => 'urn:ietf:params:xml:ns:csvHost-1.0',
-        'csvContact'    => 'urn:ietf:params:xml:ns:csvContact-1.0',
-        'csvRegistrar'  => 'urn:ietf:params:xml:ns:csvRegistrar-1.0',
         'eppParams'     => 'urn:ietf:params:xml:ns:rdeEppParams-1.0',
     ];
 
@@ -362,16 +353,10 @@ final class generator {
             'encrypt:',
             'sign:',
             'resend:',
-            'xml',
-            'csv',
             'no-report',
         ]);
 
         if (isset($opt['help']) || !isset($opt['origin']) || !isset($opt['input'])) return self::help();
-
-        if (array_key_exists('xml', $opt) && array_key_exists('csv', $opt)) {
-            return self::help();
-        }
 
         self::generate(
             origin:             strToLower(trim($opt['origin'], " \n\r\t\v\x00.")).".",
@@ -383,7 +368,6 @@ final class generator {
             encryption_key:     $opt['encrypt'] ?? null,
             signing_key:        $opt['sign'] ?? null,
             resend:             array_key_exists('resend', $opt) ? (int)$opt['resend'] : 0,
-            model:              array_key_exists('csv', $opt) ? model::csv : model::xml,
             no_report:          array_key_exists('no-report', $opt),
         );
 
@@ -407,8 +391,6 @@ final class generator {
         fwrite($fh, "  --host-attributes    use host attributes instead of objects\n");
         fwrite($fh, "  --encrypt=KEY        generate an encrypted .ryde file as well as the XML\n");
         fwrite($fh, "  --sign=KEY           generate a .sig file as well as the encrypted .ryde file\n");
-        fwrite($fh, "  --xml                generate an XML deposit (the default)\n");
-        fwrite($fh, "  --csv                generate a CSV deposit (cannot be combined with --xml, not fully implemented)\n");
         fwrite($fh, "  --no-report          do not generate a .rep file\n");
         fwrite($fh, "\n");
         fclose($fh);
@@ -674,11 +656,7 @@ final class generator {
     /**
      * write all the objects and update the counts
      */
-    private static function generateObjects(model $model, bool $registrant, bool $admin, bool $tech, bool $host_attributes, ): void {
-
-        if ($model != model::xml) {
-            fwrite(STDERR, "Warning: CSV is not fully supported yet, don't expect this program to generate a valid CSV file!\n");
-        }
+    private static function generateObjects(bool $registrant, bool $admin, bool $tech, bool $host_attributes, ): void {
 
         $delegations = [];
         foreach (self::getDelegations(self::$tld) as $name) {
@@ -1003,7 +981,6 @@ final class generator {
         ?string $encryption_key=null,
         ?string $signing_key=null,
         int $resend=0,
-        model $model=model::xml,
         bool $no_report=false,
     ): void {
         self::$tld = rtrim(strtolower($origin), ".");
@@ -1016,7 +993,7 @@ final class generator {
         $tmpfile = tempnam(sys_get_temp_dir(), __METHOD__);
         self::$fh = fopen($tmpfile, 'r+');
 
-        self::generateObjects($model, $registrant, $admin, $tech, $host_attributes);
+        self::generateObjects($registrant, $admin, $tech, $host_attributes);
 
         $id = strToUpper(base_convert((string)time(), 10, 36));
         $watermark = (new DateTimeImmutable)->format('c');
