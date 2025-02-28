@@ -217,21 +217,31 @@ final class generator {
         return 0;
     }
 
-    private static function generateDelegations(string $origin, int $count, float $secure): int {
+    private static function generateUniqueLabel(): string {
         static $seen = [];
+
+        $label = self::faker()->domainWord();
+
+        while (isset($seen[$label])) {
+            $label .= '-' . self::faker()->domainWord();
+        }
+
+        if (strlen($label) > 63) {
+            self::info("label length exceeded 63 characters, restarting");
+            return self::generateUniqueLabel();
+
+        } else {
+            $seen[$label] = 1;
+            return $label;
+
+        }
+    }
+
+    private static function generateDelegations(string $origin, int $count, float $secure): int {
         static $glue = [];
 
         for ($i = 0 ; $i < $count ; $i++) {
-            // generate FQDN
-            $name = self::faker()->domainWord().(empty($origin) ? "" : ".".$origin);
-
-            // providers only have a limited inventory
-            if (isset($seen[$name])) {
-                $i--;
-                continue;
-            }
-
-            $seen[$name] = 1;
+            $name = self::generateUniqueLabel().(empty($origin) ? "" : ".".$origin);
 
             $hostDomain = self::faker()->domainName();
 
@@ -253,6 +263,8 @@ final class generator {
                     break;
                 }
             }
+
+            $nscount = 1;
 
             for ($j = 1 ; $j <= $nscount ; $j++) {
                 $ns = sprintf('ns%u.%s', $j, $hostDomain);
