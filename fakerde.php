@@ -454,7 +454,7 @@ final class generator {
             } else {
                 $line = fgets($fh);
 
-                if (false === $line) {
+                if (false === $line || strlen($line) <= 1 || str_starts_with($line, ";")) {
                     continue;
 
                 } else {
