@@ -349,6 +349,8 @@ final class generator {
         'ZW' => '263',
     ];
 
+    private static array $locales = [];
+
     /**
      * disallow instantiation
      */
@@ -380,6 +382,22 @@ final class generator {
 
         $id = $opt['repository-id'] ?? $origin;
         if (strlen($id) > 8) return self::help("repository ID cannot be more than 8 octets");
+
+        self::$locales = array_values(array_filter(
+            array_map(
+                fn ($f) => basename($f),
+                array_filter(
+                    glob(__DIR__.'/vendor/fakerphp/faker/src/Faker/Provider/*'),
+                    fn ($f) => is_dir($f),
+                ),
+            ),
+            fn($l) => isset(self::dialCodes[substr($l, -2)])
+        ));
+
+        if (2 == strlen($origin)) {
+            $locales = array_filter(self::$locales, fn($l) => str_ends_with(strtolower($l), $origin));
+            if (!empty($locales)) self::$locales = array_values($locales);
+        }
 
         self::generate(
             origin:             $origin.".",
@@ -1121,40 +1139,10 @@ final class generator {
     }
 
     /**
-     * return a list of locales supported by fakerphp
-     */
-    private static function locales(): array {
-        static $locales = [];
-
-        if (empty($locales)) {
-            $locales = array_map(
-                fn ($f) => basename($f),
-                array_filter(
-                    glob(__DIR__.'/vendor/fakerphp/faker/src/Faker/Provider/*'),
-                    fn ($f) => is_dir($f),
-                ),
-            );
-
-            sort($locales, SORT_STRING);
-        }
-
-        return $locales;
-    }
-
-    /**
      * randomly select a locale
      */
     private static function randomLocale(): string {
-        $locales = self::locales();
-
-        while (true) {
-            $locale = $locales[rand(0, count($locales)-1)];
-            $cc = substr($locale, -2);
-
-            if (isset(self::dialCodes[$cc])) {
-                return $locale;
-            }
-        }
+        return self::$locales[mt_rand(0, count(self::$locales)-1)];
     }
 
     /**
