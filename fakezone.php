@@ -21,104 +21,31 @@ if (realpath($argv[0]) == realpath(__FILE__)) {
 final class generator {
 
     private static $nscounts = [
-        1771,       // number of domains in .org with 1 nameserver, as of Feb 2025
-        8077751,    // number of domains in .org with 2 nameservers, as of Feb 2025
-        8935795,    // number of domains in .org with 3 nameservers, as of Feb 2025
-        10688768,   // number of domains in .org with 4 nameservers, as of Feb 2025
-        10881573,   // number of domains in .org with 5 nameservers, as of Feb 2025
-        10924018,   // number of domains in .org with 6 nameservers, as of Feb 2025
-        10949202,   // number of domains in .org with 7 nameservers, as of Feb 2025
-        11087174,   // number of domains in .org with 8 nameservers, as of Feb 2025
-        11087592,   // number of domains in .org with 9 nameservers, as of Feb 2025
-        11088441,   // number of domains in .org with 10 nameservers, as of Feb 2025
-        11088527,   // number of domains in .org with 11 nameservers, as of Feb 2025
-        11089979,   // number of domains in .org with 12 nameservers, as of Feb 2025
-        11090026,   // number of domains in .org with 13 nameservers, as of Feb 2025
+        1771,       // No. domains in .org with 1 nameserver, as of Feb 2025
+        8077751,    // No. domains in .org with 2 nameservers, as of Feb 2025
+        8935795,    // No. domains in .org with 3 nameservers, as of Feb 2025
+        10688768,   // No. domains in .org with 4 nameservers, as of Feb 2025
+        10881573,   // No. domains in .org with 5 nameservers, as of Feb 2025
+        10924018,   // No. domains in .org with 6 nameservers, as of Feb 2025
+        10949202,   // No. domains in .org with 7 nameservers, as of Feb 2025
+        11087174,   // No. domains in .org with 8 nameservers, as of Feb 2025
+        11087592,   // No. domains in .org with 9 nameservers, as of Feb 2025
+        11088441,   // No. domains in .org with 10 nameservers, as of Feb 2025
+        11088527,   // No. domains in .org with 11 nameservers, as of Feb 2025
+        11089979,   // No. domains in .org with 12 nameservers, as of Feb 2025
+        11090026,   // No. domains in .org with 13 nameservers, as of Feb 2025
     ];
 
-    private static $locales = [
-        "ar_EG",
-        "ar_JO",
-        "ar_SA",
-        "at_AT",
-        "bg_BG",
-        "bn_BD",
-        "cs_CZ",
-        "da_DK",
-        "de_AT",
-        "de_CH",
-        "de_DE",
-        "el_CY",
-        "el_GR",
-        "en_AU",
-        "en_CA",
-        "en_GB",
-        "en_HK",
-        "en_IN",
-        "en_NG",
-        "en_NZ",
-        "en_PH",
-        "en_SG",
-        "en_UG",
-        "en_US",
-        "en_ZA",
-        "es_AR",
-        "es_ES",
-        "es_PE",
-        "es_VE",
-        "et_EE",
-        "fa_IR",
-        "fi_FI",
-        "fr_BE",
-        "fr_CA",
-        "fr_CH",
-        "fr_FR",
-        "he_IL",
-        "hr_HR",
-        "hu_HU",
-        "hy_AM",
-        "id_ID",
-        "is_IS",
-        "it_CH",
-        "it_IT",
-        "ja_JP",
-        "ka_GE",
-        "kk_KZ",
-        "ko_KR",
-        "lt_LT",
-        "lv_LV",
-        "me_ME",
-        "mn_MN",
-        "ms_MY",
-        "nb_NO",
-        "ne_NP",
-        "nl_BE",
-        "nl_NL",
-        "pl_PL",
-        "pt_BR",
-        "pt_PT",
-        "ro_MD",
-        "ro_RO",
-        "ru_RU",
-        "sk_SK",
-        "sl_SI",
-        "sr_Cyrl_RS",
-        "sr_Latn_RS",
-        "sr_RS",
-        "sv_SE",
-        "th_TH",
-        "tr_TR",
-        "uk_UA",
-        "vi_VN",
-        "zh_CN",
-        "zh_TW",
-    ];
+    // number of .org domains with DNSSEC as of Feb 2025
+    const DEFAULT_SECURE = 0.02;
 
     /**
      * disallow instantiation
      */
     private function __construct() {
     }
+
+    private static array $locales = [];
 
     /**
      * entrypoint which is called when the script is invoked
@@ -134,10 +61,25 @@ final class generator {
 
         if (array_key_exists('help', $opt) || !array_key_exists('origin', $opt) || !array_key_exists('count', $opt)) return self::help();
 
+        self::$locales = array_map(
+            fn ($f) => basename($f),
+            array_filter(
+                glob(__DIR__.'/vendor/fakerphp/faker/src/Faker/Provider/*'),
+                fn ($f) => is_dir($f),
+            ),
+        );
+
+        $origin = strToLower(trim($opt['origin'], " \n\r\t\v\x00."));
+
+        if (2 == strlen($origin)) {
+            $locales = array_filter(self::$locales, fn($l) => str_ends_with(strtolower($l), $origin));
+            if (!empty($locales)) self::$locales = array_values($locales);
+        }
+
         return self::generate(
-            origin: strToLower(trim($opt['origin'], " \n\r\t\v\x00.")),
+            origin: $origin,
             count:  intval($opt['count']),
-            secure: floatval($opt['secure'] ?? 0.02), // number of .org domains with DNSSEC as of Feb 2025
+            secure: floatval($opt['secure'] ?? self::DEFAULT_SECURE),
             seed:   array_key_exists('seed', $opt) ? intval($opt['seed']) : random_int(0, pow(2, 32)),
         );
     }
@@ -154,6 +96,7 @@ final class generator {
         fwrite($fh, "                   a fake root zone\n");
         fwrite($fh, "  --count=COUNT    specify zone size (in delegations)\n");
         fwrite($fh, "  --secure=RATIO   what fraction of delegations is secure (default: 2%)\n");
+        fwrite($fh, "  --seed=SEED      Random seed\n");
         fwrite($fh, "\n");
         fclose($fh);
         return 1;
@@ -176,12 +119,19 @@ final class generator {
 
     private static function generate(string $origin, int $count, float $secure, int $seed): int {
         mt_srand($seed);
+
+        printf("; RANDOM SEED = %u\n", $seed);
+        echo "\n";
+
         return self::generateApex($origin)
-                + self::generateDelegations($origin, $count, $secure);
+            + self::generateDelegations($origin, $count, $secure);
     }
 
     private static function generateApex(string $origin): int {
         $serial = self::faker()->numberBetween(0, pow(2, 16));
+
+        echo "; BEGIN ZONE APEX\n";
+        echo "\n";
 
         printf(
             "%s 3600 IN SOA ns0.nic.%s contact.nic.%s %u 1800 900 604800 86400\n",
@@ -193,26 +143,29 @@ final class generator {
 
         for ($i = 1 ; $i <= self::faker()->numberBetween(2, 6) ; $i++) {
             printf(
-                "%s 3600 IN NS ns%u.nic.%s\n",
-                (empty($origin) ? '.' : $origin),
+                "%s 3600 IN NS ns%u.nic.%s.\n",
+                (empty($origin) ? '.' : $origin.'.'),
                 $i,
                 $origin,
             );
 
             printf(
-                "ns%u.nic.%s 3600 IN A %s\n",
+                "ns%u.nic.%s. 3600 IN A %s\n",
                 $i,
                 $origin,
                 self::faker()->ipv4(),
             );
 
             printf(
-                "ns%u.nic.%s 3600 IN AAAA %s\n",
+                "ns%u.nic.%s. 3600 IN AAAA %s\n",
                 $i,
                 $origin,
                 self::faker()->ipv6(),
             );
         }
+
+        echo "\n";
+        echo "; END ZONE APEX\n";
 
         return 0;
     }
@@ -240,6 +193,10 @@ final class generator {
     private static function generateDelegations(string $origin, int $count, float $secure): int {
         static $glue = [];
 
+        echo "\n";
+        echo "; BEGIN DELEGATIONS\n";
+        echo "\n";
+
         for ($i = 0 ; $i < $count ; $i++) {
             $name = self::generateUniqueLabel().(empty($origin) ? "" : ".".$origin);
 
@@ -263,8 +220,6 @@ final class generator {
                     break;
                 }
             }
-
-            $nscount = 1;
 
             for ($j = 1 ; $j <= $nscount ; $j++) {
                 $ns = sprintf('ns%u.%s', $j, $hostDomain);
@@ -298,6 +253,9 @@ final class generator {
             }
         }
 
+        echo "\n";
+        echo "; END DELEGATIONS\n";
+
         return 0;
     }
 
@@ -307,10 +265,17 @@ final class generator {
     public static function faker(): \Faker\Generator {
         static $fakers;
 
-        $locale = self::$locales[mt_rand(0, count(self::$locales)-1)];
+        $locale = self::randomLocale();
 
         if (!isset($fakers[$locale])) $fakers[$locale] = \Faker\Factory::create($locale);
 
         return $fakers[$locale];
+    }
+
+    /**
+     * randomly select a locale
+     */
+    private static function randomLocale(): string {
+        return self::$locales[mt_rand(0, count(self::$locales)-1)];
     }
 }
