@@ -633,7 +633,7 @@ final class generator {
     private static function selectRegistrar(): ?int {
         static $max = 0;
         if ($max < 1) $max = array_sum(self::$stats);
-        $v = rand(0, $max);
+        $v = mt_rand(0, $max);
 
         $total = 0;
         foreach (self::$stats as $gurid => $dums) {
@@ -1096,7 +1096,7 @@ final class generator {
         $xml->endElement();
 
         foreach (['clientDeleteProhibited', 'clientUpdateProhibited'] as $s) {
-            if (67 >= rand(0, 99)) {
+            if (67 >= mt_rand(0, 99)) {
                 $xml->startElement('status');
                 $xml->writeAttribute('s', $s);
                 $xml->endElement();
@@ -1214,13 +1214,13 @@ final class generator {
         $xml->text(self::$registrars[$sponsor]->id);
         $xml->endElement();
 
-        $crDate = new DateTimeImmutable(sprintf('%u seconds ago', rand(90 * 86400, 3650 * 86400)));
+        $crDate = new DateTimeImmutable(sprintf('%u seconds ago', mt_rand(90 * 86400, 3650 * 86400)));
         $xml->startElement('crDate');
         $xml->text($crDate->format('c'));
         $xml->endElement();
 
         if ($includeExDate) {
-            $exDate = new DateTimeImmutable(sprintf('@%u', time()+rand(86400, 365 * 86400)));
+            $exDate = new DateTimeImmutable(sprintf('@%u', time()+mt_rand(86400, 365 * 86400)));
             $xml->startElement('exDate');
             $xml->text($exDate->format('c'));
             $xml->endElement();
@@ -1230,7 +1230,7 @@ final class generator {
         $xml->text(self::$registrars[$sponsor]->id);
         $xml->endElement();
 
-        $upDate = new DateTimeImmutable(sprintf('%u seconds ago', rand(86400, 90 * 86400)));
+        $upDate = new DateTimeImmutable(sprintf('%u seconds ago', mt_rand(86400, 90 * 86400)));
         $xml->startElement('upDate');
         $xml->text($upDate->format('c'));
         $xml->endElement();
@@ -1259,7 +1259,7 @@ final class generator {
         $xml->endElement();
 
         foreach (['clientDeleteProhibited', 'clientUpdateProhibited', 'clientTransferProhibited'] as $s) {
-            if (67 >= rand(0, 99)) {
+            if (67 >= mt_rand(0, 99)) {
                 $xml->startElement('status');
                 $xml->writeAttribute('s', $s);
                 $xml->endElement();
@@ -1271,7 +1271,7 @@ final class generator {
         $info = [
             'loc' => [
                 'name'      => self::faker($locale)->name(),
-                'org'       => (0 == rand(0, 3) ? null : self::faker($locale)->company()),
+                'org'       => (0 == mt_rand(0, 3) ? null : self::faker($locale)->company()),
                 'street'    => self::faker($locale)->streetAddress(),
                 'city'      => self::faker($locale)->city(),
                 'sp'        => self::fakeSP($locale),
@@ -1341,7 +1341,7 @@ final class generator {
         $xml->text(self::fakePhone($locale));
         $xml->endElement();
 
-        if (0 == rand(0, 9)) {
+        if (0 == mt_rand(0, 9)) {
             $xml->startElement('fax');
             $xml->text(self::fakePhone($locale));
             $xml->endElement();
@@ -1377,7 +1377,7 @@ final class generator {
 
         $scount = 0;
         foreach (['clientUpdateProhibited', 'clientDeleteProhibited', 'clientTransferProhibited'] as $s) {
-            if (67 >= rand(0, 99)) {
+            if (67 >= mt_rand(0, 99)) {
                 $xml->startElement('status');
                 $xml->writeAttribute('s', $s);
                 $xml->endElement();
