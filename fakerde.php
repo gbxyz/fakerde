@@ -51,9 +51,26 @@ final class generator {
     private static string $tld;
 
     /**
+     * the repository ID
+     */
+    private static string $repositoryID;
+
+    /**
      * temporary filehandle where objects are written
      */
     private static $fh;
+
+    const TYPE_DOMAIN   = 1;
+    const TYPE_HOST     = 2;
+    const TYPE_CONTACT  = 3;
+
+    private static function generateROID(string $seed): string {
+        return substr(sprintf(
+            '%s-%s',
+            strToUpper(base_convert(hash("sha512", $seed), 16, 36)),
+            self::$repositoryID
+        ), -89);
+    }
 
     /**
      * map of short name => XML namespace
@@ -345,6 +362,7 @@ final class generator {
         $opt = getopt('', [
             'help',
             'origin:',
+            'repository-id:',
             'input:',
             'registrant',
             'admin',
@@ -356,10 +374,16 @@ final class generator {
             'no-report',
         ]);
 
-        if (isset($opt['help']) || !isset($opt['origin']) || !isset($opt['input'])) return self::help();
+        if (isset($opt['help']) || !isset($opt['origin']) || !isset($opt['input'])) return self::help("missing argument(s)");
+
+        $origin = strToLower(trim($opt['origin'], " \n\r\t\v\x00."));
+
+        $id = $opt['repository-id'] ?? $origin;
+        if (strlen($id) > 8) return self::help("repository ID cannot be more than 8 octets");
 
         self::generate(
-            origin:             strToLower(trim($opt['origin'], " \n\r\t\v\x00.")).".",
+            origin:             $origin.".",
+            repositoryID:       $id,
             input:              $opt['input'],
             registrant:         array_key_exists('registrant', $opt),
             admin:              array_key_exists('admin', $opt),
@@ -377,9 +401,10 @@ final class generator {
     /**
      * display user help
      */
-    private static function help(): int {
+    private static function help(?string $message): int {
         global $argv;
         $fh = fopen('php://stderr', 'w');
+        if (!is_null($message)) fwrite($fh, sprintf("Error: %s\n", $message));
         fprintf($fh, "Usage: php %s OPTIONS\n\nOptions:\n", $argv[0]);
         fwrite($fh, "  --help               show this help\n");
         fwrite($fh, "  --origin=ORIGIN      specify zone name\n");
@@ -973,6 +998,7 @@ final class generator {
 
     private static function generate(
         string $origin,
+        string $repositoryID,
         string $input,
         bool $registrant,
         bool $admin,
@@ -983,9 +1009,10 @@ final class generator {
         int $resend=0,
         bool $no_report=false,
     ): void {
-        self::$tld = rtrim(strtolower($origin), ".");
-        self::info(sprintf('running for .%s, resend %u', self::$tld, $resend));
+        self::info(sprintf('running for .%s, resend %u', $origin, $resend));
 
+        self::$tld          = rtrim(strtolower($origin), ".");
+        self::$repositoryID = strToUpper($repositoryID);
         self::$registrars   = self::getRegistrars();
         self::$stats        = self::getRegistrarStats(self::$tld);
         self::$rrs          = self::readZoneFile($input);
@@ -1061,7 +1088,7 @@ final class generator {
         $xml->endElement();
 
         $xml->startElement('roid');
-        $xml->text('H'.strToUpper(base_convert(sha1($name), 16, 36)).'-'.strToUpper(self::$tld));
+        $xml->text(self::generateROID($name));
         $xml->endElement();
 
         $xml->startElement('status');
@@ -1224,7 +1251,7 @@ final class generator {
         $xml->endElement();
 
         $xml->startElement('roid');
-        $xml->text('C'.strToUpper(base_convert(sha1($id), 16, 36)).'-'.strToUpper(self::$tld));
+        $xml->text(self::generateROID($id));
         $xml->endElement();
 
         $xml->startElement('status');
@@ -1345,7 +1372,7 @@ final class generator {
         $xml->endElement();
 
         $xml->startElement('roid');
-        $xml->text('D'.strToUpper(base_convert(sha1($name), 16, 36)).'-'.strToUpper(self::$tld));
+        $xml->text(self::generateROID($name));
         $xml->endElement();
 
         $scount = 0;
