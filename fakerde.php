@@ -827,6 +827,7 @@ final class generator {
 
         $xml->writeAttribute('xmlns:epp', 'urn:ietf:params:xml:ns:epp-1.0');
         $xml->writeAttribute('xmlns:domain', 'urn:ietf:params:xml:ns:domain-1.0');
+        $xml->writeAttribute('xmlns:secDNS', 'urn:ietf:params:xml:ns:secDNS-1.1');
 
         if ($contacts) {
             $xml->writeAttribute('xmlns:contact', 'urn:ietf:params:xml:ns:contact-1.0');
@@ -1363,20 +1364,30 @@ final class generator {
         $xml->text(self::generateROID($name));
         $xml->endElement();
 
-        $scount = 0;
-        foreach (['clientUpdateProhibited', 'clientDeleteProhibited', 'clientTransferProhibited'] as $s) {
-            if (67 >= mt_rand(0, 99)) {
-                $xml->startElement('status');
-                $xml->writeAttribute('s', $s);
-                $xml->endElement();
+        $status = array_filter(
+            ['clientUpdateProhibited', 'clientDeleteProhibited', 'clientTransferProhibited'],
+            fn() => 67 >= mt_rand(0, 99)
+        );
 
-                $scount++;
-            }
+        if (1 == mt_rand(0, 100)) {
+            $status[] = 'pendingTransfer';
+
+        } elseif (1 == mt_rand(0, 100)) {
+            $status[] = 'pendingDelete';
+
         }
 
-        if ($scount < 1) {
+        if (count($status) < 1) $status[] = 'ok';
+
+        foreach ($status as $s) {
             $xml->startElement('status');
-            $xml->writeAttribute('s', 'ok');
+            $xml->writeAttribute('s', $s);
+            $xml->endElement();
+        }
+
+        if (in_array('pendingDelete', $status)) {
+            $xml->startElement('rgpStatus');
+            $xml->writeAttribute('s', mt_rand(0, 86400 * 35) < 86400 * 30 ? 'redemptionPeriod' : 'pendingDelete');
             $xml->endElement();
         }
 
@@ -1397,6 +1408,7 @@ final class generator {
 
         if (isset(self::$rrs[$name]['NS'])) {
             $xml->startElement('ns');
+
             foreach (self::$rrs[$name]['NS'] as $rr) {
                 if ($host_attributes) {
                     $xml->startElement('domain:hostAttr');
@@ -1428,6 +1440,21 @@ final class generator {
         }
 
         self::writeStandardMetadata($xml, $sponsor, true);
+
+        if (isset(self::$rrs[$name]['DS'])) {
+            $xml->startElement('secDNS');
+            foreach (self::$rrs[$name]['DS'] as $ds) {
+                $xml->startElement("secDNS:dsData");
+
+                $xml->writeElement("secDNS:keyTag",     $ds->keytag);
+                $xml->writeElement("secDNS:alg",        $ds->algorithm);
+                $xml->writeElement("secDNS:digestType", $ds->digesttype);
+                $xml->writeElement("secDNS:digest",     $ds->digest);
+
+                $xml->endElement();
+            }
+            $xml->endElement();
+        }
 
         $xml->endElement();
         return $xml->flush();
