@@ -61,13 +61,13 @@ final class generator {
 
         if (array_key_exists('help', $opt) || !array_key_exists('origin', $opt) || !array_key_exists('count', $opt)) return self::help();
 
-        self::$locales = array_map(
+        self::$locales = array_values(array_map(
             fn ($f) => basename($f),
             array_filter(
                 glob(__DIR__.'/vendor/fakerphp/faker/src/Faker/Provider/*'),
                 fn ($f) => is_dir($f),
             ),
-        );
+        ));
 
         $origin = strToLower(trim($opt['origin'], " \n\r\t\v\x00."));
 
