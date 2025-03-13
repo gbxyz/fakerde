@@ -802,7 +802,7 @@ final class generator {
         $xml->text('1.0');
         $xml->endElement();
 
-        $types = ['domain', 'registrar'];
+        $types = ['domain', 'registrar','eppParams'];
         if ($contacts) $types[] = 'contact';
         if ($hosts) $types[] = 'host';
 
