@@ -39,13 +39,16 @@ final class generator {
     // number of .org domains with DNSSEC as of Feb 2025
     const DEFAULT_SECURE = 0.02;
 
+    const DEFAULT_COUNT = 1000;
+    const DEFAULT_TTL = 3600;
+
+    private static array $locales = [];
+
     /**
      * disallow instantiation
      */
     private function __construct() {
     }
-
-    private static array $locales = [];
 
     /**
      * entrypoint which is called when the script is invoked
@@ -57,9 +60,10 @@ final class generator {
             'count:',
             'secure:',
             'seed:',
+            'ttl:',
         ]);
 
-        if (array_key_exists('help', $opt) || !array_key_exists('origin', $opt) || !array_key_exists('count', $opt)) return self::help();
+        if (array_key_exists('help', $opt) || !array_key_exists('origin', $opt)) return self::help();
 
         self::$locales = array_values(array_map(
             fn ($f) => basename($f),
@@ -73,14 +77,16 @@ final class generator {
 
         if (2 == strlen($origin)) {
             $locales = array_filter(self::$locales, fn($l) => str_ends_with(strtolower($l), $origin));
+
             if (!empty($locales)) self::$locales = array_values($locales);
         }
 
         return self::generate(
             origin: $origin,
-            count:  intval($opt['count']),
+            count:  intval($opt['count'] ?? self::DEFAULT_COUNT),
             secure: floatval($opt['secure'] ?? self::DEFAULT_SECURE),
             seed:   array_key_exists('seed', $opt) ? intval($opt['seed']) : random_int(0, pow(2, 32)),
+            ttl:    intval($opt['ttl'] ?? self::DEFAULT_TTL),
         );
     }
 
@@ -96,6 +102,7 @@ final class generator {
         fwrite($fh, "                   a fake root zone\n");
         fwrite($fh, "  --count=COUNT    specify zone size (in delegations)\n");
         fwrite($fh, "  --secure=RATIO   what fraction of delegations is secure (default: 2%)\n");
+        fwrite($fh, "  --ttl=TTL        TTL to use for records in the zone file (default: 3600)\n");
         fwrite($fh, "  --seed=SEED      Random seed\n");
         fwrite($fh, "\n");
         fclose($fh);
@@ -117,25 +124,26 @@ final class generator {
         exit(1);
     }
 
-    private static function generate(string $origin, int $count, float $secure, int $seed): int {
+    private static function generate(string $origin, int $count, float $secure, int $seed, int $ttl): int {
         mt_srand($seed);
 
         printf("; RANDOM SEED = %u\n", $seed);
         echo "\n";
 
-        return self::generateApex($origin)
-            + self::generateDelegations($origin, $count, $secure);
+        return self::generateApex($origin, $ttl)
+            + self::generateDelegations($origin, $count, $secure, $ttl);
     }
 
-    private static function generateApex(string $origin): int {
+    private static function generateApex(string $origin, int $ttl): int {
         $serial = self::faker()->numberBetween(0, pow(2, 16));
 
         echo "; BEGIN ZONE APEX\n";
         echo "\n";
 
         printf(
-            "%s 3600 IN SOA ns0.nic.%s contact.nic.%s %u 1800 900 604800 86400\n",
+            "%s %u IN SOA ns0.nic.%s contact.nic.%s %u 1800 900 604800 86400\n",
             (empty($origin) ? '.' : $origin."."),
+            $ttl,
             $origin,
             $origin,
             $serial,
@@ -143,23 +151,26 @@ final class generator {
 
         for ($i = 1 ; $i <= self::faker()->numberBetween(2, 6) ; $i++) {
             printf(
-                "%s 3600 IN NS ns%u.nic.%s.\n",
+                "%s %u IN NS ns%u.nic.%s.\n",
                 (empty($origin) ? '.' : $origin.'.'),
+                $ttl,
                 $i,
                 $origin,
             );
 
             printf(
-                "ns%u.nic.%s. 3600 IN A %s\n",
+                "ns%u.nic.%s. %u IN A %s\n",
                 $i,
                 $origin,
+                $ttl,
                 self::faker()->ipv4(),
             );
 
             printf(
-                "ns%u.nic.%s. 3600 IN AAAA %s\n",
+                "ns%u.nic.%s. %u IN AAAA %s\n",
                 $i,
                 $origin,
+                $ttl,
                 self::faker()->ipv6(),
             );
         }
@@ -190,7 +201,7 @@ final class generator {
         }
     }
 
-    private static function generateDelegations(string $origin, int $count, float $secure): int {
+    private static function generateDelegations(string $origin, int $count, float $secure, int $ttl): int {
         static $glue = [];
 
         echo "\n";
@@ -225,20 +236,20 @@ final class generator {
                 $ns = sprintf('ns%u.%s', $j, $hostDomain);
 
                 if ($delegateHostDomain) {
-                    printf("%s. 3600 IN NS %s.\n", $hostDomain, $ns);
+                    printf("%s. %u IN NS %s.\n", $hostDomain, $ttl, $ns);
                 }
 
                 if (str_ends_with($ns, (empty($origin) ? "" : ".".$origin))) {
                     if (!isset($glue[$ns])) {
 
-                        printf("%s. 3600 IN A %s\n", $ns, self::faker()->ipv4());
-                        if (self::faker()->numberBetween(0, 10) >= 4) printf("%s. 3600 IN AAAA %s\n", $ns, self::faker()->ipv6());
+                        printf("%s. %u IN A %s\n", $ns, $ttl, self::faker()->ipv4());
+                        if (self::faker()->numberBetween(0, 10) >= 4) printf("%s. %u IN AAAA %s\n", $ns, $ttl, self::faker()->ipv6());
 
                         $glue[$ns] = 1;
                     }
                 }
 
-                printf("%s. 3600 IN NS %s.\n", $name, $ns);
+                printf("%s. %u IN NS %s.\n", $name, $ttl, $ns);
             }
 
             if (self::faker()->numberBetween(0, PHP_INT_MAX) / PHP_INT_MAX <= $secure) {
@@ -246,8 +257,9 @@ final class generator {
                 while (strlen($ds) < 16) $ds .= dechex(self::faker()->numberBetween(0, 16));
 
                 printf(
-                    "%s. 3600 IN DS 1234 8 2 %s\n",
+                    "%s. %u IN DS 1234 8 2 %s\n",
                     $name,
+                    $ttl,
                     hash('sha256', $ds)
                 );
             }
