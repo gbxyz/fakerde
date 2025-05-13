@@ -785,9 +785,9 @@ final class generator {
         $xml->text('en');
         $xml->endElement();
 
-        $objURIs = [self::xmlns['domain']];
-        if ($contacts) $objURIs[] = self::xmlns['contact'];
-        if ($hosts) $objURIs[] = self::xmlns['host'];
+        $objURIs = ['urn:ietf:params:xml:ns:domain-1.0'];
+        if ($contacts) $objURIs[] = 'urn:ietf:params:xml:ns:contact-1.0';
+        if ($hosts) $objURIs[] = 'urn:ietf:params:xml:ns:host-1.0';
 
         foreach ($objURIs as $uri) {
             $xml->startElement('objURI');
