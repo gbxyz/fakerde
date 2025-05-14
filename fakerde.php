@@ -779,7 +779,7 @@ final class generator {
             $tech,
         ));
 
-        self::info(sprintf('wrote %u policy objects', self::$count['policy']));
+        self::info(sprintf('wrote %u policy objects', self::$counts['policy']));
     }
 
     private static function generateEPPParamsObject(bool $contacts, bool $hosts): string {
