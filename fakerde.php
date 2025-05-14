@@ -699,7 +699,7 @@ final class generator {
     /**
      * write all the objects and update the counts
      */
-    private static function generateObjects(bool $registrant, bool $admin, bool $tech, bool $host_attributes, ): void {
+    private static function generateObjects(bool $registrant, bool $admin, bool $tech, bool $host_attributes): void {
 
         $delegations = [];
         foreach (self::getDelegations(self::$tld) as $name) {
@@ -770,7 +770,7 @@ final class generator {
         ];
     }
 
-    private static function generateEPPParamsObject(bool $contacts, bool $hosts) {
+    private static function generateEPPParamsObject(bool $contacts, bool $hosts): string {
         $xml = new XMLWriter;
         $xml->openMemory();
         $xml->setIndent(true);
