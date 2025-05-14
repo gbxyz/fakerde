@@ -37,10 +37,11 @@ final class generator {
     ];
 
     // number of .org domains with DNSSEC as of Feb 2025
-    const DEFAULT_SECURE = 0.02;
+    const DEFAULT_SECURE    = 0.02;
 
-    const DEFAULT_COUNT = 1000;
-    const DEFAULT_TTL = 3600;
+    const DEFAULT_COUNT     = 1000;
+    const DEFAULT_TTL       = 3600;
+    const DEFAULT_IDN       = 0.1;
 
     private static array $locales = [];
 
@@ -61,6 +62,8 @@ final class generator {
             'secure:',
             'seed:',
             'ttl:',
+            'idn:',
+            'idn-tables:',
         ]);
 
         if (array_key_exists('help', $opt) || !array_key_exists('origin', $opt)) return self::help();
@@ -76,17 +79,19 @@ final class generator {
         $origin = strToLower(trim($opt['origin'], " \n\r\t\v\x00."));
 
         if (2 == strlen($origin)) {
-            $locales = array_filter(self::$locales, fn($l) => str_ends_with(strtolower($l), $origin));
+            $locales = array_filter(self::$locales, fn($l) => str_ends_with(strtolower($l), '_'.$origin));
 
             if (!empty($locales)) self::$locales = array_values($locales);
         }
 
         return self::generate(
-            origin: $origin,
-            count:  intval($opt['count'] ?? self::DEFAULT_COUNT),
-            secure: floatval($opt['secure'] ?? self::DEFAULT_SECURE),
-            seed:   array_key_exists('seed', $opt) ? intval($opt['seed']) : random_int(0, pow(2, 32)),
-            ttl:    intval($opt['ttl'] ?? self::DEFAULT_TTL),
+            origin:     $origin,
+            count:      intval($opt['count'] ?? self::DEFAULT_COUNT),
+            secure:     floatval($opt['secure'] ?? self::DEFAULT_SECURE),
+            seed:       array_key_exists('seed', $opt) ? intval($opt['seed']) : random_int(0, pow(2, 32)),
+            ttl:        intval($opt['ttl'] ?? self::DEFAULT_TTL),
+            idn:        floatval($opt['idn'] ?? self::DEFAULT_IDN),
+            idn_tables: array_key_exists('idn-tables', $opt) ? explode(',', $opt['idn-tables']) : [],
         );
     }
 
@@ -97,13 +102,15 @@ final class generator {
         global $argv;
         $fh = fopen('php://stderr', 'w');
         fprintf($fh, "Usage: php %s OPTIONS\n\nOptions:\n", $argv[0]);
-        fwrite($fh, "  --help           show this help\n");
-        fwrite($fh, "  --origin=ORIGIN  specify zone name, use '.' to generate\n");
-        fwrite($fh, "                   a fake root zone\n");
-        fwrite($fh, "  --count=COUNT    specify zone size (in delegations)\n");
-        fwrite($fh, "  --secure=RATIO   what fraction of delegations is secure (default: 2%)\n");
-        fwrite($fh, "  --ttl=TTL        TTL to use for records in the zone file (default: 3600)\n");
-        fwrite($fh, "  --seed=SEED      Random seed\n");
+        fwrite($fh, "  --help               show this help\n");
+        fwrite($fh, "  --origin=ORIGIN      specify zone name, use '.' to generate\n");
+        fwrite($fh, "                       a fake root zone\n");
+        fwrite($fh, "  --count=COUNT        specify zone size (in delegations)\n");
+        fwrite($fh, "  --secure=RATIO       what fraction of delegations are secure (default: 2%)\n");
+        fwrite($fh, "  --ttl=TTL            TTL to use for records in the zone file (default: 3600)\n");
+        fwrite($fh, "  --seed=SEED          random seed\n");
+        fwrite($fh, "  --idn-tables=LIST    romma-separated list of IDN tables\n");
+        fwrite($fh, "  --idn=RATIO          what fraction of delegations are IDNs (default: 10%)\n");
         fwrite($fh, "\n");
         fclose($fh);
         return 1;
@@ -124,14 +131,42 @@ final class generator {
         exit(1);
     }
 
-    private static function generate(string $origin, int $count, float $secure, int $seed, int $ttl): int {
+    private static function generate(
+        string  $origin,
+        int     $count,
+        float   $secure,
+        int     $seed,
+        int     $ttl,
+        float   $idn,
+        array   $idn_tables
+    ): int {
         mt_srand($seed);
+
+        foreach ($idn_tables as $tag) {
+            try {
+                self::mapTableToLocale($tag);
+
+            } catch (\Throwable $e) {
+                self::die($e->getMessage());
+
+            }
+        }
 
         printf("; RANDOM SEED = %u\n", $seed);
         echo "\n";
 
-        return self::generateApex($origin, $ttl)
-            + self::generateDelegations($origin, $count, $secure, $ttl);
+        $status = self::generateApex($origin, $ttl);
+
+        $status +=self::generateDelegations(
+            origin:     $origin,
+            count:      $count,
+            secure:     $secure,
+            ttl:        $ttl,
+            idn:        $idn,
+            idn_tables: $idn_tables,
+        );
+
+        return $status;
     }
 
     private static function generateApex(string $origin, int $ttl): int {
@@ -181,18 +216,35 @@ final class generator {
         return 0;
     }
 
-    private static function generateUniqueLabel(): string {
+    private static function generateUniqueLabel(
+        array   $idn_tables,
+        float   $idn,
+    ): string {
         static $seen = [];
 
-        $label = self::faker()->domainWord();
+        if (self::faker()->numberBetween(0, PHP_INT_MAX) / PHP_INT_MAX <= $idn && count($idn_tables) > 0) {
+            $table = self::faker()->randomElement($idn_tables);
+            $locale = self::mapTableToLocale($table);
 
-        while (isset($seen[$label])) {
-            $label .= '-' . self::faker()->domainWord();
+            $label = str_replace(" ", "", mb_strtolower(self::faker($locale)->lastName()));
+
+            while (isset($seen[$label])) {
+                $label .= str_replace(" ", "", mb_strtolower(self::faker()->lastName()));
+            }
+
+            $label = idn_to_ascii($label);
+
+        } else {
+            $label = self::faker()->domainWord();
+
+            while (isset($seen[$label])) {
+                $label .= '-' . self::faker()->domainWord();
+            }
         }
 
         if (strlen($label) > 63) {
             self::info("label length exceeded 63 characters, restarting");
-            return self::generateUniqueLabel();
+            return self::generateUniqueLabel($idn_tables, $idn);
 
         } else {
             $seen[$label] = 1;
@@ -201,7 +253,64 @@ final class generator {
         }
     }
 
-    private static function generateDelegations(string $origin, int $count, float $secure, int $ttl): int {
+    private static function mapTableToLocale(string $table): string {
+        if (str_starts_with($table, 'und-')) {
+            $script = substr(strtolower($table), -4);
+
+            return match($script) {
+                'arab'  => self::mapTableToLocale('ar'),
+                'armn'  => self::mapTableToLocale('hy'),
+//              'bali'  => self::mapTableToLocale('XX'),
+//              'beng'  => self::mapTableToLocale('XX'),
+                'cyrl'  => self::mapTableToLocale(self::faker()->randomElement(['ru', 'ua'])),
+//              'deva'  => self::mapTableToLocale('XX'),
+//              'ethi'  => self::mapTableToLocale('XX'),
+                'geor'  => self::mapTableToLocale('ka'),
+                'grek'  => self::mapTableToLocale('el'),
+//              'gujr'  => self::mapTableToLocale('XX'),
+//              'guru'  => self::mapTableToLocale('XX'),
+                'hani'  => self::mapTableToLocale('zh'),
+                'hebr'  => self::mapTableToLocale('he'),
+                'jpan'  => self::mapTableToLocale('ja'),
+//              'khmr'  => self::mapTableToLocale('ko'),
+//              'knda'  => self::mapTableToLocale('XX'),
+                'kore'  => self::mapTableToLocale('ko'),
+                'laoo'  => self::mapTableToLocale('lo'),
+                'latn'  => self::mapTableToLocale(self::faker()->randomElement(['fr', 'cs', 'sk', 'hu', 'pl', 'lt', 'lv', 'sl', 'tr'])),
+//              'mlym'  => self::mapTableToLocale('XX'),
+                'mymr'  => self::mapTableToLocale('ms'),
+//              'orya'  => self::mapTableToLocale('XX'),
+//              'sinh'  => self::mapTableToLocale('XX'),
+//              'taml'  => self::mapTableToLocale('XX'),
+//              'telu'  => self::mapTableToLocale('XX'),
+//              'thaa'  => self::mapTableToLocale('XX'),
+                'thai'  => self::mapTableToLocale('th'),
+                default => throw new \Exception("Cannot map IDN table '{$table}' to a supported locale"),
+            };
+
+        } else {
+            $lang = substr($table, 0, 2);
+
+            $locales = array_filter(self::$locales, function($l) use ($lang): bool {
+                return str_starts_with($l, $lang.'_');
+            });
+
+            if (count($locales) < 1) {
+                throw new \Exception("Cannot map IDN table '{$table}' to a supported locale");
+            }
+
+            return $locales[self::faker()->randomKey($locales)];
+        }
+    }
+
+    private static function generateDelegations(
+        string  $origin,
+        int     $count,
+        float   $secure,
+        int     $ttl,
+        float   $idn,
+        array   $idn_tables,
+    ): int {
         static $glue = [];
 
         echo "\n";
@@ -209,7 +318,7 @@ final class generator {
         echo "\n";
 
         for ($i = 0 ; $i < $count ; $i++) {
-            $name = self::generateUniqueLabel().(empty($origin) ? "" : ".".$origin);
+            $name = self::generateUniqueLabel($idn_tables, $idn).(empty($origin) ? "" : ".".$origin);
 
             $hostDomain = self::faker()->domainName();
 
@@ -274,10 +383,10 @@ final class generator {
     /**
      * access the cached faker object for the given locale
      */
-    public static function faker(): \Faker\Generator {
+    public static function faker(?string $locale=null): \Faker\Generator {
         static $fakers;
 
-        $locale = self::randomLocale();
+        $locale = $locale ?? self::randomLocale();
 
         if (!isset($fakers[$locale])) $fakers[$locale] = \Faker\Factory::create($locale);
 
