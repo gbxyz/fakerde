@@ -833,6 +833,10 @@ final class generator {
             $xml->writeAttribute('xmlns:contact', 'urn:ietf:params:xml:ns:contact-1.0');
         }
 
+        if ($hosts) {
+            $xml->writeAttribute('xmlns:host', 'urn:ietf:params:xml:ns:host-1.0');
+        }
+
         $xml->writeAttribute('type', 'FULL');
         $xml->writeAttribute('id', $id);
 
