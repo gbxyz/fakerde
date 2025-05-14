@@ -85,6 +85,7 @@ final class generator {
         'registrar'     => 'urn:ietf:params:xml:ns:rdeRegistrar-1.0',
         'eppParams'     => 'urn:ietf:params:xml:ns:rdeEppParams-1.0',
         'policy'        => 'urn:ietf:params:xml:ns:rdePolicy-1.0',
+        'idn'           => 'urn:ietf:params:xml:ns:rdeIDN-1.0',
     ];
 
     /**
@@ -375,6 +376,7 @@ final class generator {
             'sign:',
             'resend:',
             'no-report',
+            'idn-tables:',
         ]);
 
         if (isset($opt['help']) || !isset($opt['origin']) || !isset($opt['input'])) return self::help("missing argument(s)");
@@ -412,6 +414,7 @@ final class generator {
             signing_key:        $opt['sign'] ?? null,
             resend:             array_key_exists('resend', $opt) ? (int)$opt['resend'] : 0,
             no_report:          array_key_exists('no-report', $opt),
+            idn_tables:         array_key_exists('idn-tables', $opt) ? explode(',', $opt['idn-tables']) : [],
         );
 
         return 0;
@@ -436,6 +439,7 @@ final class generator {
         fwrite($fh, "  --encrypt=KEY        generate an encrypted .ryde file as well as the XML\n");
         fwrite($fh, "  --sign=KEY           generate a .sig file as well as the encrypted .ryde file\n");
         fwrite($fh, "  --no-report          do not generate a .rep file\n");
+        fwrite($fh, "  --idn-tables=LIST    comma-separated list of IDN languate tags\n");
         fwrite($fh, "\n");
         fclose($fh);
         return 1;
@@ -700,7 +704,13 @@ final class generator {
     /**
      * write all the objects and update the counts
      */
-    private static function generateObjects(bool $registrant, bool $admin, bool $tech, bool $host_attributes): void {
+    private static function generateObjects(
+        bool $registrant,
+        bool $admin,
+        bool $tech,
+        bool $host_attributes,
+        array $idn_tables
+    ): void {
 
         $delegations = [];
         foreach (self::getDelegations(self::$tld) as $name) {
@@ -771,6 +781,7 @@ final class generator {
             'registrar' => count($rars),
             'eppParams' => 1,
             'policy'    => 0,
+            'idn'       => count($idn_tables),
         ];
 
         fwrite(self::$fh, self::generatePolicyObject(
@@ -779,7 +790,32 @@ final class generator {
             $tech,
         ));
 
+        fwrite(self::$fh, self::generateIDNObjects($idn_tables));
+
         self::info(sprintf('wrote %u policy objects', self::$counts['policy']));
+    }
+
+    private static function generateIDNObjects(array $idn_tables): string {
+        $xml = new XMLWriter;
+        $xml->openMemory();
+        $xml->setIndent(true);
+
+        foreach ($idn_tables as $tag) {
+            $xml->startElementNS(name:'idnTableRef', namespace:self::xmlns['idn'], prefix:null);
+            $xml->writeAttribute('id', $tag);
+
+            $xml->startElement('url');
+            $xml->text(sprintf('https://www.nic.%s/idn/%s/table.html', self::$tld, $tag));
+            $xml->endElement();
+
+            $xml->startElement('urlPolicy');
+            $xml->text(sprintf('https://www.nic.%s/idn/%s/policy.html', self::$tld, $tag));
+            $xml->endElement();
+
+            $xml->endElement();
+        }
+
+        return $xml->flush();
     }
 
     private static function generateEPPParamsObject(bool $contacts, bool $hosts): string {
@@ -852,7 +888,14 @@ final class generator {
     /**
      * wrap the object data in the deposit XML header/footer and write to the output file
      */
-    private static function assembleDeposit(string $id, string $watermark, int $resend, bool $contacts, bool $hosts): string {
+    private static function assembleDeposit(
+        string $id,
+        string $watermark,
+        int $resend,
+        bool $contacts,
+        bool $hosts,
+        bool $idn_tables,
+    ): string {
 
         $xml = new XMLWriter;
         $xml->openMemory();
@@ -888,6 +931,7 @@ final class generator {
             $types[] = 'policy';
         }
         if ($hosts) $types[] = 'host';
+        if ($idn_tables) $types[] = 'idn';
 
         foreach ($types as $type) {
             $xml->startElement('objURI');
@@ -1066,6 +1110,7 @@ final class generator {
         ?string $signing_key=null,
         int $resend=0,
         bool $no_report=false,
+        array $idn_tables=[],
     ): void {
         self::info(sprintf('running for .%s, resend %u', $origin, $resend));
 
@@ -1078,12 +1123,25 @@ final class generator {
         $tmpfile = tempnam(sys_get_temp_dir(), __METHOD__);
         self::$fh = fopen($tmpfile, 'r+');
 
-        self::generateObjects($registrant, $admin, $tech, $host_attributes);
+        self::generateObjects(
+            registrant:         $registrant,
+            admin:              $admin,
+            tech:               $tech,
+            host_attributes:    $host_attributes,
+            idn_tables:         $idn_tables,
+        );
 
         $id = strToUpper(base_convert((string)time(), 10, 36));
         $watermark = (new DateTimeImmutable)->format('c');
 
-        $file = self::assembleDeposit($id, $watermark, $resend, $registrant || $admin || $tech, !$host_attributes);
+        $file = self::assembleDeposit(
+            id:         $id,
+            watermark:  $watermark,
+            resend:     $resend,
+            contacts:   $registrant || $admin || $tech,
+            hosts:      !$host_attributes,
+            idn_tables: count($idn_tables) > 0,
+        );
 
         if (false === $no_report) {
             self::writeReport($id, $watermark, $resend);
