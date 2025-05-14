@@ -865,13 +865,9 @@ final class generator {
         $xml->writeAttribute('xmlns:domain', 'urn:ietf:params:xml:ns:domain-1.0');
         $xml->writeAttribute('xmlns:secDNS', 'urn:ietf:params:xml:ns:secDNS-1.1');
 
-        if ($contacts) {
-            $xml->writeAttribute('xmlns:contact', 'urn:ietf:params:xml:ns:contact-1.0');
-        }
-
-        if ($hosts) {
-            $xml->writeAttribute('xmlns:host', 'urn:ietf:params:xml:ns:host-1.0');
-        }
+        if ($contacts)      $xml->writeAttribute('xmlns:contact',   'urn:ietf:params:xml:ns:contact-1.0');
+        if ($hosts)         $xml->writeAttribute('xmlns:host',      'urn:ietf:params:xml:ns:host-1.0');
+        if ($idn_tables)    $xml->writeAttribute('xmlns:rdeIDN',    self::xmlns['idn']);
 
         $xml->writeAttribute('type', 'FULL');
         $xml->writeAttribute('id', $id);
