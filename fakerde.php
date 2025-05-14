@@ -84,6 +84,7 @@ final class generator {
         'contact'       => 'urn:ietf:params:xml:ns:rdeContact-1.0',
         'registrar'     => 'urn:ietf:params:xml:ns:rdeRegistrar-1.0',
         'eppParams'     => 'urn:ietf:params:xml:ns:rdeEppParams-1.0',
+        'policy'        => 'urn:ietf:params:xml:ns:rdePolicy-1.0',
     ];
 
     /**
@@ -769,7 +770,16 @@ final class generator {
             'contact'   => $c,
             'registrar' => count($rars),
             'eppParams' => 1,
+            'policy'    => 0,
         ];
+
+        fwrite(self::$fh, self::generatePolicyObject(
+            $registrant,
+            $admin,
+            $tech,
+        ));
+
+        self::info(sprintf('wrote %u policy objects', self::$count['policy']));
     }
 
     private static function generateEPPParamsObject(bool $contacts, bool $hosts): string {
@@ -815,6 +825,30 @@ final class generator {
         return $xml->flush();
     }
 
+    private static function generatePolicyObject(bool $registrant, bool $admin, bool $tech): string {
+
+        $elements = [];
+        if ($registrant) $elements[] = 'rdeDomain:registrant';
+        if ($admin) $elements[] = "rdeDomain:contact[@type='admin']";
+        if ($tech) $elements[] = "rdeDomain:contact[@type='tech']";
+
+        self::$counts['policy'] = count($elements);
+
+        $xml = new XMLWriter;
+        $xml->openMemory();
+        $xml->setIndent(true);
+
+        foreach ($elements as $element) {
+            $xml->startElementNS(name:'policy', namespace:self::xmlns['policy'], prefix:null);
+            $xml->writeAttribute('scope', '//rde:deposit/rde:contents/rdeDomain:domain');
+            $xml->writeAttribute('element', $element);
+
+            $xml->endElement();
+        }
+
+        return $xml->flush();
+    }
+
     /**
      * wrap the object data in the deposit XML header/footer and write to the output file
      */
@@ -853,7 +887,10 @@ final class generator {
         $xml->endElement();
 
         $types = ['domain', 'registrar','eppParams'];
-        if ($contacts) $types[] = 'contact';
+        if ($contacts) {
+            $types[] = 'contact';
+            $types[] = 'policy';
+        }
         if ($hosts) $types[] = 'host';
 
         foreach ($types as $type) {
