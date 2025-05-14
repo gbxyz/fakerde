@@ -715,9 +715,10 @@ final class generator {
 
         self::info(sprintf('%u domains will be written', count($delegations)));
 
-        $hosts = [];
         $h = 0;
         if (!$host_attributes) {
+            $hosts = [];
+
             foreach ($delegations as $name => $gurid) {
                 foreach (self::$rrs[$name]['NS'] ?? [] as $ns) {
                     if (!isset($hosts[$ns->nsdname])) {
@@ -741,7 +742,7 @@ final class generator {
         foreach ($delegations as $name => $gurid) {
             $contacts = [];
             foreach ($types as $type) {
-                $contacts[$type] = substr(strToUpper(base_convert(sha1($name.$type), 16, 36)), 0, 16);
+                $contacts[$type] = substr(strToUpper(base_convert(sha1($name.chr(0).$type), 16, 36)), 0, 16);
 
                 fwrite(self::$fh, self::generateContactObject($contacts[$type], $gurid));
 
@@ -760,6 +761,7 @@ final class generator {
             $registrant || $admin || $tech,
             !$host_attributes
         ));
+        self::info('wrote EPP Parameters object');
 
         self::$counts = [
             'domain'    => $d,
