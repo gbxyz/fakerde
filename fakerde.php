@@ -86,6 +86,7 @@ final class generator {
         'eppParams'     => 'urn:ietf:params:xml:ns:rdeEppParams-1.0',
         'policy'        => 'urn:ietf:params:xml:ns:rdePolicy-1.0',
         'idn'           => 'urn:ietf:params:xml:ns:rdeIDN-1.0',
+        'nndn'          => 'urn:ietf:params:xml:ns:rdeNNDN-1.0',
     ];
 
     /**
@@ -377,6 +378,7 @@ final class generator {
             'resend:',
             'no-report',
             'idn-tables:',
+            'nndn:',
         ]);
 
         if (isset($opt['help']) || !isset($opt['origin']) || !isset($opt['input'])) return self::help("missing argument(s)");
@@ -415,6 +417,7 @@ final class generator {
             resend:             array_key_exists('resend', $opt) ? (int)$opt['resend'] : 0,
             no_report:          array_key_exists('no-report', $opt),
             idn_tables:         array_key_exists('idn-tables', $opt) ? explode(',', $opt['idn-tables']) : [],
+            nndn:               intval($opt['nndn'] ?? 0),
         );
 
         return 0;
@@ -440,6 +443,7 @@ final class generator {
         fwrite($fh, "  --sign=KEY           generate a .sig file as well as the encrypted .ryde file\n");
         fwrite($fh, "  --no-report          do not generate a .rep file\n");
         fwrite($fh, "  --idn-tables=LIST    comma-separated list of IDN languate tags\n");
+        fwrite($fh, "  --nndn=COUNT         add COUNT 'NNDN' objects\n");
         fwrite($fh, "\n");
         fclose($fh);
         return 1;
@@ -705,11 +709,12 @@ final class generator {
      * write all the objects and update the counts
      */
     private static function generateObjects(
-        bool $registrant,
-        bool $admin,
-        bool $tech,
-        bool $host_attributes,
-        array $idn_tables
+        bool    $registrant,
+        bool    $admin,
+        bool    $tech,
+        bool    $host_attributes,
+        array   $idn_tables,
+        int     $nndn,
     ): void {
 
         $delegations = [];
@@ -768,6 +773,12 @@ final class generator {
         self::info(sprintf('wrote %u contacts', $c));
         self::info(sprintf('wrote %u domains', $d));
 
+        for ($i = 0 ; $i <= $nndn ; $i++) {
+            fwrite(self::$fh, self::generateNNDNObject());
+        }
+
+        self::info(sprintf('wrote %u NNDN objects', $nndn));
+
         fwrite(self::$fh, self::generateEPPParamsObject(
             $registrant || $admin || $tech,
             !$host_attributes
@@ -782,6 +793,7 @@ final class generator {
             'eppParams' => 1,
             'policy'    => 0,
             'idn'       => count($idn_tables),
+            'nndn'      => $nndn,
         ];
 
         fwrite(self::$fh, self::generatePolicyObject(
@@ -793,6 +805,40 @@ final class generator {
         fwrite(self::$fh, self::generateIDNObjects($idn_tables));
 
         self::info(sprintf('wrote %u policy objects', self::$counts['policy']));
+    }
+
+    private static function generateNNDNObject(): string {
+
+        static $seen = array_map(fn($n) => basename($n, '.'.self::$tld), self::getDelegations());
+
+        $name = strtolower(self::faker(self::randomLocale())->domainWord());
+
+        while (in_array($name, $seen)) {
+            $name .= '-' . self::faker(self::randomLocale())->domainWord();
+        }
+
+        $seen[] = $name;
+
+        $xml = new XMLWriter;
+        $xml->openMemory();
+        $xml->setIndent(true);
+
+        $nndn = [
+            'aName'     => $name.'.'.self::$tld,
+            'nameState' => 'blocked',
+        ];
+
+        $xml->startElementNS(name:'NNDN', namespace:self::xmlns['nndn'], prefix:null);
+
+        foreach ($nndn as $name => $value) {
+            $xml->startElement($name);
+            $xml->text($value);
+            $xml->endElement();
+        }
+
+        $xml->endElement();
+
+        return $xml->flush();
     }
 
     private static function generateIDNObjects(array $idn_tables): string {
@@ -889,12 +935,13 @@ final class generator {
      * wrap the object data in the deposit XML header/footer and write to the output file
      */
     private static function assembleDeposit(
-        string $id,
-        string $watermark,
-        int $resend,
-        bool $contacts,
-        bool $hosts,
-        bool $idn_tables,
+        string  $id,
+        string  $watermark,
+        int     $resend,
+        bool    $contacts,
+        bool    $hosts,
+        bool    $idn_tables,
+        bool    $nndn,
     ): string {
 
         $xml = new XMLWriter;
@@ -911,6 +958,7 @@ final class generator {
         if ($contacts)      $xml->writeAttribute('xmlns:contact',   'urn:ietf:params:xml:ns:contact-1.0');
         if ($hosts)         $xml->writeAttribute('xmlns:host',      'urn:ietf:params:xml:ns:host-1.0');
         if ($idn_tables)    $xml->writeAttribute('xmlns:rdeIDN',    self::xmlns['idn']);
+        if ($nndn)          $xml->writeAttribute('xmlns:rdeNNDN',   self::xmlns['nndn']);
 
         $xml->writeAttribute('type', 'FULL');
         $xml->writeAttribute('id', $id);
@@ -930,8 +978,9 @@ final class generator {
             $types[] = 'contact';
             $types[] = 'policy';
         }
-        if ($hosts) $types[] = 'host';
-        if ($idn_tables) $types[] = 'idn';
+        if ($hosts)         $types[] = 'host';
+        if ($idn_tables)    $types[] = 'idn';
+        if ($nndn)          $types[] = 'nndn';
 
         foreach ($types as $type) {
             $xml->startElement('objURI');
@@ -1099,18 +1148,19 @@ final class generator {
     }
 
     private static function generate(
-        string $origin,
-        string $repositoryID,
-        string $input,
-        bool $registrant,
-        bool $admin,
-        bool $tech,
-        bool $host_attributes,
+        string  $origin,
+        string  $repositoryID,
+        string  $input,
+        bool    $registrant,
+        bool    $admin,
+        bool    $tech,
+        bool    $host_attributes,
         ?string $encryption_key=null,
         ?string $signing_key=null,
-        int $resend=0,
-        bool $no_report=false,
-        array $idn_tables=[],
+        int     $resend=0,
+        bool    $no_report=false,
+        array   $idn_tables=[],
+        int     $nndn=0,
     ): void {
         self::info(sprintf('running for .%s, resend %u', $origin, $resend));
 
@@ -1129,6 +1179,7 @@ final class generator {
             tech:               $tech,
             host_attributes:    $host_attributes,
             idn_tables:         $idn_tables,
+            nndn:               $nndn,
         );
 
         $id = strToUpper(base_convert((string)time(), 10, 36));
@@ -1141,6 +1192,7 @@ final class generator {
             contacts:   $registrant || $admin || $tech,
             hosts:      !$host_attributes,
             idn_tables: count($idn_tables) > 0,
+            nndn:       $nndn > 0,
         );
 
         if (false === $no_report) {
