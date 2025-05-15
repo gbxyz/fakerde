@@ -773,7 +773,7 @@ final class generator {
         self::info(sprintf('wrote %u contacts', $c));
         self::info(sprintf('wrote %u domains', $d));
 
-        for ($i = 0 ; $i <= $nndn ; $i++) {
+        for ($i = 0 ; $i < $nndn ; $i++) {
             fwrite(self::$fh, self::generateNNDNObject());
         }
 
@@ -808,7 +808,6 @@ final class generator {
     }
 
     private static function generateNNDNObject(): string {
-
         static $seen = array_map(fn($n) => basename($n, '.'.self::$tld), self::getDelegations());
 
         $name = strtolower(self::faker(self::randomLocale())->domainWord());
