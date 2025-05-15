@@ -64,6 +64,7 @@ final class generator {
             'ttl:',
             'idn:',
             'idn-tables:',
+            'nameservers:',
         ]);
 
         if (array_key_exists('help', $opt) || !array_key_exists('origin', $opt)) return self::help();
@@ -85,13 +86,14 @@ final class generator {
         }
 
         return self::generate(
-            origin:     $origin,
-            count:      intval($opt['count'] ?? self::DEFAULT_COUNT),
-            secure:     floatval($opt['secure'] ?? self::DEFAULT_SECURE),
-            seed:       array_key_exists('seed', $opt) ? intval($opt['seed']) : random_int(0, pow(2, 32)),
-            ttl:        intval($opt['ttl'] ?? self::DEFAULT_TTL),
-            idn:        floatval($opt['idn'] ?? self::DEFAULT_IDN),
-            idn_tables: array_key_exists('idn-tables', $opt) ? explode(',', $opt['idn-tables']) : [],
+            origin:         $origin,
+            count:          intval($opt['count'] ?? self::DEFAULT_COUNT),
+            secure:         floatval($opt['secure'] ?? self::DEFAULT_SECURE),
+            seed:           array_key_exists('seed', $opt) ? intval($opt['seed']) : random_int(0, pow(2, 32)),
+            ttl:            intval($opt['ttl'] ?? self::DEFAULT_TTL),
+            idn:            floatval($opt['idn'] ?? self::DEFAULT_IDN),
+            idn_tables:     array_key_exists('idn-tables', $opt) ? explode(',', $opt['idn-tables']) : [],
+            nameservers:    array_key_exists('nameservers', $opt) ? explode(',', $opt['nameservers']) : [],
         );
     }
 
@@ -109,8 +111,9 @@ final class generator {
         fwrite($fh, "  --secure=RATIO       what fraction of delegations are secure (default: 2%)\n");
         fwrite($fh, "  --ttl=TTL            TTL to use for records in the zone file (default: 3600)\n");
         fwrite($fh, "  --seed=SEED          random seed\n");
-        fwrite($fh, "  --idn-tables=LIST    romma-separated list of IDN tables\n");
+        fwrite($fh, "  --idn-tables=LIST    comma-separated list of IDN tables\n");
         fwrite($fh, "  --idn=RATIO          what fraction of delegations are IDNs (default: 10%)\n");
+        fwrite($fh, "  --nameservers=LIST   comma-separated lists of nameservers for the zone (default: ns{2-6}.nic.zone)\n");
         fwrite($fh, "\n");
         fclose($fh);
         return 1;
@@ -138,7 +141,8 @@ final class generator {
         int     $seed,
         int     $ttl,
         float   $idn,
-        array   $idn_tables
+        array   $idn_tables,
+        array   $nameservers,
     ): int {
         mt_srand($seed);
 
@@ -155,7 +159,7 @@ final class generator {
         printf("; RANDOM SEED = %u\n", $seed);
         echo "\n";
 
-        $status = self::generateApex($origin, $ttl);
+        $status = self::generateApex($origin, $ttl, $nameservers);
 
         $status +=self::generateDelegations(
             origin:     $origin,
@@ -169,45 +173,50 @@ final class generator {
         return $status;
     }
 
-    private static function generateApex(string $origin, int $ttl): int {
+    private static function generateApex(string $origin, int $ttl, array $nameservers): int {
         $serial = self::faker()->numberBetween(0, pow(2, 16));
 
         echo "; BEGIN ZONE APEX\n";
         echo "\n";
 
+        if (empty($nameservers)) {
+            for ($i = 1 ; $i <= self::faker()->numberBetween(2, 6) ; $i++) {
+                $nameservers[] = sprintf('ns%u.%s', $i, (empty($origin) ? 'root-servers.net' : sprintf('nic.%s', $origin)));
+            }
+        }
+
         printf(
-            "%s %u IN SOA ns0.nic.%s contact.nic.%s %u 1800 900 604800 86400\n",
-            (empty($origin) ? '.' : $origin."."),
-            $ttl,
+            "%s. %u IN SOA %s. contact.nic.%s. %u 1800 900 604800 86400\n",
             $origin,
+            $ttl,
+            $nameservers[0],
             $origin,
             $serial,
         );
 
-        for ($i = 1 ; $i <= self::faker()->numberBetween(2, 6) ; $i++) {
+        foreach ($nameservers as $ns) {
             printf(
-                "%s %u IN NS ns%u.nic.%s.\n",
-                (empty($origin) ? '.' : $origin.'.'),
-                $ttl,
-                $i,
+                "%s. %u IN NS %s.\n",
                 $origin,
+                $ttl,
+                $ns,
             );
 
-            printf(
-                "ns%u.nic.%s. %u IN A %s\n",
-                $i,
-                $origin,
-                $ttl,
-                self::faker()->ipv4(),
-            );
+            if (str_ends_with($ns, $origin)) {
+                printf(
+                    "%s. %u IN A %s\n",
+                    $ns,
+                    $ttl,
+                    self::faker()->ipv4(),
+                );
 
-            printf(
-                "ns%u.nic.%s. %u IN AAAA %s\n",
-                $i,
-                $origin,
-                $ttl,
-                self::faker()->ipv6(),
-            );
+                printf(
+                    "%s. %u IN AAAA %s\n",
+                    $ns,
+                    $ttl,
+                    self::faker()->ipv6(),
+                );
+            }
         }
 
         echo "\n";
